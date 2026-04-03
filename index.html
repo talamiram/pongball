@@ -70,15 +70,33 @@
 
     const keys = {};
     const justPressed = {};
+    const justReleased = {};
+    let spaceHeldTime = 0;           // how long Space has been held
+    let spaceDown = false;
+
     window.addEventListener('keydown', e => {
       if (!keys[e.code]) justPressed[e.code] = true;
       keys[e.code] = true;
+      if (e.code === 'Space' && !spaceDown) {
+        spaceDown = true;
+        spaceHeldTime = 0;
+      }
       e.preventDefault();
     });
-    window.addEventListener('keyup', e => { keys[e.code] = false; });
+    window.addEventListener('keyup', e => {
+      keys[e.code] = false;
+      justReleased[e.code] = true;
+      if (e.code === 'Space') {
+        spaceDown = false;
+      }
+    });
 
     function consumePress(code) {
       if (justPressed[code]) { justPressed[code] = false; return true; }
+      return false;
+    }
+    function consumeRelease(code) {
+      if (justReleased[code]) { justReleased[code] = false; return true; }
       return false;
     }
 
@@ -108,15 +126,24 @@
     }
 
     // ─── SERVE FROM GK ───
-    function serveFromGK() {
+    // chargeTime: how long Space was held (0 = quick tap, longer = lob)
+    function serveFromGK(chargeTime) {
       const gk = serveFromLeft ? gkL : gkR;
       const dir = serveFromLeft ? 1 : -1;
-      const speed = W * BALL_START_SPEED;
-      const angle = (Math.random() - 0.5) * 0.4;
+
+      // Quick tap = fast flat pass. Long hold = slower lob (higher arc)
+      const charge = clamp(chargeTime, 0, 0.6);  // cap at 0.6s
+      const lobFactor = charge / 0.6;             // 0 = flat, 1 = full lob
+
+      // Speed: tap is fast, lob is slower horizontally
+      const speed = W * BALL_START_SPEED * (1.2 - lobFactor * 0.4);
+      // Angle: lob adds a random upward/downward arc
+      const baseAngle = (Math.random() - 0.5) * 0.3;
+      const lobAngle = baseAngle + (Math.random() > 0.5 ? 1 : -1) * lobFactor * 0.6;
 
       ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2 : gk.x - ball.size / 2 - 2;
-      ball.vx = Math.cos(angle) * speed * dir;
-      ball.vy = Math.sin(angle) * speed;
+      ball.vx = Math.cos(lobAngle) * speed * dir;
+      ball.vy = Math.sin(lobAngle) * speed;
       ballState = 'live';
     }
 
@@ -126,17 +153,24 @@
     }
 
     // ─── SHOOT FROM OUTFIELD (player or AI) ───
-    function shootFromPaddle(paddle, isLeft) {
+    // chargeTime: how long Space was held (for player). AI passes 0.
+    function shootFromPaddle(paddle, isLeft, chargeTime) {
       const dir = isLeft ? 1 : -1;
-      const speed = W * BALL_START_SPEED * 1.4;
+      const charge = clamp(chargeTime || 0, 0, 0.6);
+      const lobFactor = charge / 0.6;
 
-      // Use the paddle's current velocity for aiming
+      // Tap = fast direct shot. Hold = slower lob with more arc
+      const speed = W * BALL_START_SPEED * (1.5 - lobFactor * 0.5);
+
       const velY = (paddle === ofL) ? ofLVelY : ofRVelY;
       const spinInfluence = clamp(velY / (H * 0.5), -1, 1);
       const shootAngle = spinInfluence * MAX_BOUNCE_ANGLE * 0.8;
 
+      // Lob adds extra vertical component
+      const lobVY = lobFactor * H * 0.15 * (Math.random() > 0.5 ? 1 : -1);
+
       ball.vx = Math.cos(shootAngle) * speed * dir;
-      ball.vy = Math.sin(shootAngle) * speed + velY * 0.25;
+      ball.vy = Math.sin(shootAngle) * speed + velY * 0.25 + lobVY;
 
       ballState = 'live';
       holdPaddle = null;
@@ -378,11 +412,14 @@
         }
         ball.y = gk.y + gk.h / 2;
 
-        // Player serves with Space — control immediately switches to outfield
-        if (serveFromLeft && consumePress('Space')) {
-          serveFromGK();
-          // Control is now on outfield (playerControlsGK will be false next frame)
-          return;
+        // Player serves on Space RELEASE — hold longer to lob
+        if (serveFromLeft) {
+          if (spaceDown) spaceHeldTime += dt;
+          if (consumeRelease('Space')) {
+            serveFromGK(spaceHeldTime);
+            spaceHeldTime = 0;
+            return;
+          }
         }
 
         // AI serves after delay
@@ -398,10 +435,14 @@
       if (ballState === 'held_player' && holdPaddle) {
         stickBallToFront(holdPaddle, true);
         holdTimer += dt;
+        if (spaceDown) spaceHeldTime += dt;
 
-        // Space to shoot or auto-release at time limit
-        if (consumePress('Space') || holdTimer >= HOLD_TIME_LIMIT) {
-          shootFromPaddle(holdPaddle, true);
+        // Shoot on Space RELEASE or auto-release at time limit
+        if (consumeRelease('Space')) {
+          shootFromPaddle(holdPaddle, true, spaceHeldTime);
+          spaceHeldTime = 0;
+        } else if (holdTimer >= HOLD_TIME_LIMIT) {
+          shootFromPaddle(holdPaddle, true, 0);  // auto-release = quick shot
         }
         return;
       }
@@ -493,18 +534,35 @@
         ctx.fillRect(bx, by, barW * pct, barH);
       }
 
+      // Charge indicator (when holding Space)
+      if (spaceDown && (ballState === 'on_gk' && serveFromLeft || ballState === 'held_player')) {
+        const charge = clamp(spaceHeldTime / 0.6, 0, 1);
+        const barW = 30;
+        const barH = 3;
+        // Show near the ball
+        const bx = ball.x + ball.size;
+        const by = ball.y - 10;
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillRect(bx, by, barW, barH);
+        // Green for tap, yellow for lob
+        const r = Math.round(255 * charge);
+        const g = Math.round(255 * (1 - charge * 0.3));
+        ctx.fillStyle = `rgb(${r},${g},100)`;
+        ctx.fillRect(bx, by, barW * charge, barH);
+      }
+
       // Prompts
       if (ballState === 'on_gk' && serveFromLeft && goalPause <= 0) {
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.font = '12px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.font = '11px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('SPACE to serve', W / 2, 22);
+        ctx.fillText(spaceDown ? 'release to lob...' : 'tap SPACE = pass  |  hold = lob', W / 2, 22);
       }
       if (ballState === 'held_player') {
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.font = '12px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.font = '11px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('SPACE to shoot', W / 2, 22);
+        ctx.fillText(spaceDown ? 'release to lob...' : 'tap SPACE = shoot  |  hold = lob', W / 2, 22);
       }
 
       // Score
