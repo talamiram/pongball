@@ -332,15 +332,15 @@
       const gkSpeed = H * GK_SPEED_RATIO;
 
       // ─── Player controls ───
-      // When ball is on left GK: arrows move the GK
-      // Otherwise: arrows move the outfield paddle
-      if (ballState === 'on_gk' && serveFromLeft) {
-        // Player controls GK during serve
+      // When ball is on left GK: arrows move the GK up/down ONLY
+      // The instant Space is pressed, control switches to outfield
+      const playerControlsGK = (ballState === 'on_gk' && serveFromLeft && goalPause <= 0);
+
+      if (playerControlsGK) {
         if (keys['ArrowUp'])   gkL.y -= gkSpeed * dt;
         if (keys['ArrowDown']) gkL.y += gkSpeed * dt;
         gkL.y = clamp(gkL.y, 0, H - gkL.h);
       } else {
-        // Player controls outfield
         if (keys['ArrowUp'])    ofL.y -= pSpeed * dt;
         if (keys['ArrowDown'])  ofL.y += pSpeed * dt;
         if (keys['ArrowLeft'])  ofL.x -= pSpeed * dt;
@@ -355,8 +355,8 @@
       ofRVelY = (ofR.y - ofRPrevY) / Math.max(dt, 0.001);
       ofRPrevY = ofR.y;
 
-      // AI
-      gkAI(gkL, GK_SKILL_LEFT, dt);
+      // AI (skip left GK AI when player controls it)
+      if (!playerControlsGK) gkAI(gkL, GK_SKILL_LEFT, dt);
       gkAI(gkR, GK_SKILL_RIGHT, dt);
       ofAI(ofR, dt);
 
@@ -370,7 +370,7 @@
       // Ball on GK
       if (ballState === 'on_gk') {
         const gk = serveFromLeft ? gkL : gkR;
-        // Stick to front of GK
+        // Stick ball to front of GK
         if (serveFromLeft) {
           ball.x = gk.x + gk.w + ball.size / 2 + 2;
         } else {
@@ -378,9 +378,10 @@
         }
         ball.y = gk.y + gk.h / 2;
 
-        // Player serves with Space
+        // Player serves with Space — control immediately switches to outfield
         if (serveFromLeft && consumePress('Space')) {
           serveFromGK();
+          // Control is now on outfield (playerControlsGK will be false next frame)
           return;
         }
 
