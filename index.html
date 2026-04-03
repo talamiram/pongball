@@ -45,6 +45,10 @@
     const BALL_ACCEL = 1.03;
     const MAX_BOUNCE_ANGLE = Math.PI / 3;
     const HOLD_TIME_LIMIT = 2.0;        // seconds before auto-release
+    const GRAVITY = 1200;               // pixels/s² — pulls lobbed ball back down
+    const LOB_HEIGHT_GK = 0.35;         // z launch velocity multiplier for GK serve lob
+    const LOB_HEIGHT_OF = 0.45;         // z launch velocity multiplier for outfield shot lob
+    const AIR_THRESHOLD = 8;            // ball.z above this = "in the air" (skips paddle catch)
 
     const GK_SKILL_LEFT = 0.75;
     const GK_SKILL_RIGHT = 0.65;
@@ -112,7 +116,7 @@
       ofL = { x: W * 0.30, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
       ofR = { x: W * 0.70 - PADDLE_W, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
 
-      ball = { x: 0, y: 0, vx: 0, vy: 0, size: BALL_SIZE };
+      ball = { x: 0, y: 0, vx: 0, vy: 0, z: 0, vz: 0, size: BALL_SIZE };
     }
 
     function resetAfterGoal(servingLeft) {
@@ -122,6 +126,8 @@
       holdTimer = 0;
       ball.vx = 0;
       ball.vy = 0;
+      ball.z = 0;
+      ball.vz = 0;
       goalPause = 0.6;
     }
 
@@ -131,19 +137,26 @@
       const gk = serveFromLeft ? gkL : gkR;
       const dir = serveFromLeft ? 1 : -1;
 
-      // Quick tap = fast flat pass. Long hold = slower lob (higher arc)
-      const charge = clamp(chargeTime, 0, 0.6);  // cap at 0.6s
-      const lobFactor = charge / 0.6;             // 0 = flat, 1 = full lob
+      const charge = clamp(chargeTime, 0, 0.5);  // cap at 0.5s
+      const lobFactor = charge / 0.5;             // 0 = flat, 1 = full lob
 
-      // Speed: tap is fast, lob is slower horizontally
-      const speed = W * BALL_START_SPEED * (1.2 - lobFactor * 0.4);
-      // Angle: lob adds a random upward/downward arc
-      const baseAngle = (Math.random() - 0.5) * 0.3;
-      const lobAngle = baseAngle + (Math.random() > 0.5 ? 1 : -1) * lobFactor * 0.6;
+      // TAP: fast flat pass straight ahead
+      // LOB: much slower horizontally, big vertical angle
+      const tapSpeed = W * BALL_START_SPEED * 1.3;
+      const lobSpeed = W * BALL_START_SPEED * 0.6;
+      const speed = tapSpeed + (lobSpeed - tapSpeed) * lobFactor;
+
+      // Tap = nearly straight (tiny random). Lob = steep angle up or down
+      const tapAngle = (Math.random() - 0.5) * 0.15;
+      const lobAngle = (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.4);
+      const angle = tapAngle + (lobAngle - tapAngle) * lobFactor;
 
       ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2 : gk.x - ball.size / 2 - 2;
-      ball.vx = Math.cos(lobAngle) * speed * dir;
-      ball.vy = Math.sin(lobAngle) * speed;
+      ball.vx = Math.cos(angle) * speed * dir;
+      ball.vy = Math.sin(angle) * speed;
+      // Lob launches ball into the air (z-axis)
+      ball.z = 0;
+      ball.vz = lobFactor * H * LOB_HEIGHT_GK;
       ballState = 'live';
     }
 
@@ -156,21 +169,27 @@
     // chargeTime: how long Space was held (for player). AI passes 0.
     function shootFromPaddle(paddle, isLeft, chargeTime) {
       const dir = isLeft ? 1 : -1;
-      const charge = clamp(chargeTime || 0, 0, 0.6);
-      const lobFactor = charge / 0.6;
+      const charge = clamp(chargeTime || 0, 0, 0.5);
+      const lobFactor = charge / 0.5;
 
-      // Tap = fast direct shot. Hold = slower lob with more arc
-      const speed = W * BALL_START_SPEED * (1.5 - lobFactor * 0.5);
+      // Tap = fast laser. Hold = slow high lob
+      const tapSpeed = W * BALL_START_SPEED * 1.5;
+      const lobSpeed = W * BALL_START_SPEED * 0.6;
+      const speed = tapSpeed + (lobSpeed - tapSpeed) * lobFactor;
 
       const velY = (paddle === ofL) ? ofLVelY : ofRVelY;
       const spinInfluence = clamp(velY / (H * 0.5), -1, 1);
-      const shootAngle = spinInfluence * MAX_BOUNCE_ANGLE * 0.8;
+      const baseAngle = spinInfluence * MAX_BOUNCE_ANGLE * 0.8;
 
-      // Lob adds extra vertical component
-      const lobVY = lobFactor * H * 0.15 * (Math.random() > 0.5 ? 1 : -1);
+      // Lob adds dramatic arc angle
+      const lobAngle = lobFactor * (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.4);
+      const shootAngle = baseAngle + lobAngle;
 
       ball.vx = Math.cos(shootAngle) * speed * dir;
-      ball.vy = Math.sin(shootAngle) * speed + velY * 0.25 + lobVY;
+      ball.vy = Math.sin(shootAngle) * speed + velY * 0.25;
+      // Lob launches ball into the air (z-axis)
+      ball.z = 0;
+      ball.vz = lobFactor * H * LOB_HEIGHT_OF;
 
       ballState = 'live';
       holdPaddle = null;
@@ -283,6 +302,17 @@
         ball.x += ball.vx * subDt;
         ball.y += ball.vy * subDt;
 
+        // Z-axis: gravity pulls lobbed ball back down
+        if (ball.z > 0 || ball.vz > 0) {
+          ball.z += ball.vz * subDt;
+          ball.vz -= GRAVITY * subDt;
+          if (ball.z <= 0) {
+            ball.z = 0;
+            ball.vz = 0;
+            // Small speed boost on landing (bouncy feel)
+          }
+        }
+
         // Wall bounce
         if (ball.y - ball.size / 2 < 0) {
           ball.y = ball.size / 2;
@@ -293,43 +323,65 @@
           ball.vy = -Math.abs(ball.vy) * 0.98;
         }
 
-        // Player outfield catches the ball
-        if (hitPaddle(ofL, true)) {
+        const airborne = ball.z > AIR_THRESHOLD;
+
+        // Player outfield catches the ball (only on ground)
+        if (!airborne && hitPaddle(ofL, true)) {
           ballState = 'held_player';
           holdPaddle = ofL;
           holdOffsetY = clamp(ball.y - (ofL.y + ofL.h / 2), -ofL.h / 2, ofL.h / 2);
           holdTimer = 0;
           ball.vx = 0;
           ball.vy = 0;
+          ball.z = 0;
+          ball.vz = 0;
           return;
         }
 
-        // AI outfield catches the ball
-        if (hitPaddle(ofR, false)) {
+        // AI outfield catches the ball (only on ground)
+        if (!airborne && hitPaddle(ofR, false)) {
           ballState = 'held_ai';
           holdPaddle = ofR;
           holdOffsetY = clamp(ball.y - (ofR.y + ofR.h / 2), -ofR.h / 2, ofR.h / 2);
           holdTimer = 0;
-          aiShootTimer = 0.3 + Math.random() * 0.8;  // AI holds 0.3–1.1s then shoots
+          aiShootTimer = 0.3 + Math.random() * 0.8;
           ball.vx = 0;
           ball.vy = 0;
+          ball.z = 0;
+          ball.vz = 0;
           return;
         }
 
-        // GKs and goals — just bounce off GKs
-        hitPaddle(gkL, true);
-        hitPaddle(gkR, false);
-
-        // Goals
-        if (ball.x + ball.size / 2 < 0) {
-          scoreR++;
-          resetAfterGoal(true);
-          return;
+        // GKs — ball bounces off GKs only when on ground
+        if (!airborne) {
+          hitPaddle(gkL, true);
+          hitPaddle(gkR, false);
         }
-        if (ball.x - ball.size / 2 > W) {
-          scoreL++;
-          resetAfterGoal(false);
-          return;
+
+        // Goals (ball must be near ground to count as goal)
+        if (!airborne) {
+          if (ball.x + ball.size / 2 < 0) {
+            scoreR++;
+            resetAfterGoal(true);
+            return;
+          }
+          if (ball.x - ball.size / 2 > W) {
+            scoreL++;
+            resetAfterGoal(false);
+            return;
+          }
+        }
+
+        // If airborne and past the goal line, bounce it back in (went over the goal)
+        if (airborne) {
+          if (ball.x - ball.size / 2 < 0) {
+            ball.x = ball.size / 2;
+            ball.vx = Math.abs(ball.vx) * 0.7;
+          }
+          if (ball.x + ball.size / 2 > W) {
+            ball.x = W - ball.size / 2;
+            ball.vx = -Math.abs(ball.vx) * 0.7;
+          }
         }
       }
     }
@@ -511,13 +563,30 @@
       ctx.fillRect(ofL.x, ofL.y, ofL.w, ofL.h);
       ctx.fillRect(ofR.x, ofR.y, ofR.w, ofR.h);
 
-      // Ball
+      // Ball (with 3D height effect)
       if (goalPause <= 0) {
+        const zPx = ball.z;                         // pixels of "height"
+        const zScale = 1 + zPx / 300;               // ball grows slightly when high
+        const drawSize = ball.size * zScale;
+        const shadowAlpha = Math.max(0.08, 0.3 - zPx / 400);
+        const shadowSpread = 1 + zPx / 60;          // shadow gets bigger/softer
+
+        // Shadow on the ground
+        if (zPx > 2) {
+          ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
+          const sw = ball.size * shadowSpread;
+          const sh = ball.size * shadowSpread * 0.5;  // flatter oval shadow
+          ctx.beginPath();
+          ctx.ellipse(ball.x, ball.y + zPx * 0.15, sw / 2, sh / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Ball itself (drawn "up" by z pixels)
         ctx.fillStyle = '#fff';
         ctx.fillRect(
-          ball.x - ball.size / 2,
-          ball.y - ball.size / 2,
-          ball.size, ball.size
+          ball.x - drawSize / 2,
+          ball.y - drawSize / 2 - zPx,
+          drawSize, drawSize
         );
       }
 
@@ -536,12 +605,12 @@
 
       // Charge indicator (when holding Space)
       if (spaceDown && (ballState === 'on_gk' && serveFromLeft || ballState === 'held_player')) {
-        const charge = clamp(spaceHeldTime / 0.6, 0, 1);
+        const charge = clamp(spaceHeldTime / 0.5, 0, 1);
         const barW = 30;
         const barH = 3;
         // Show near the ball
         const bx = ball.x + ball.size;
-        const by = ball.y - 10;
+        const by = ball.y - 10 - ball.z;
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
         ctx.fillRect(bx, by, barW, barH);
         // Green for tap, yellow for lob
