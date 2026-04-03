@@ -3,14 +3,303 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PONG WC — World Cup Soccer</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <title>PongBall</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      background: #000;
+    }
+  </style>
 </head>
 <body>
   <canvas id="game"></canvas>
-  <script type="module" src="src/main.js"></script>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // --- SIZING: fill the window ---
+    let W, H;
+    function resize() {
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = W;
+      canvas.height = H;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // --- GAME CONSTANTS ---
+    const PADDLE_W = 10;
+    const GK_H_RATIO = 0.07;      // goalkeeper height as fraction of screen height
+    const OF_H_RATIO = 0.055;     // outfield height as fraction of screen height
+    const BALL_SIZE = 8;
+    const PADDLE_SPEED_RATIO = 0.55; // paddles move at 55% of screen height per second
+    const BALL_START_SPEED = 0.25;   // ball speed as fraction of screen width per second
+    const BALL_MAX_SPEED = 0.65;
+    const BALL_ACCEL = 1.03;         // speed multiplier per hit
+    const MAX_BOUNCE_ANGLE = Math.PI / 3.5;
+
+    // --- STATE ---
+    let scoreL = 0, scoreR = 0;
+    let ball, gkL, gkR, ofL, ofR;
+    let serving = true;
+    let serveTimer = 0;
+    let serveDir = 1;
+    let activeL = 'of'; // which paddle left player controls: 'gk' or 'of'
+    let activeR = 'of';
+
+    const keys = {};
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      // Switch paddle
+      if (e.code === 'ShiftLeft' || e.code === 'CapsLock') {
+        activeL = activeL === 'gk' ? 'of' : 'gk';
+      }
+      if (e.code === 'ShiftRight' || e.code === 'Slash') {
+        activeR = activeR === 'gk' ? 'of' : 'gk';
+      }
+    });
+    window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    function initPositions() {
+      const gkH = H * GK_H_RATIO;
+      const ofH = H * OF_H_RATIO;
+
+      gkL = { x: 25, y: H / 2 - gkH / 2, w: PADDLE_W, h: gkH };
+      gkR = { x: W - 25 - PADDLE_W, y: H / 2 - gkH / 2, w: PADDLE_W, h: gkH };
+      ofL = { x: W * 0.28, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
+      ofR = { x: W * 0.72 - PADDLE_W, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
+
+      ball = {
+        x: W / 2, y: H / 2,
+        vx: 0, vy: 0,
+        size: BALL_SIZE
+      };
+    }
+
+    function resetBall(dir) {
+      ball.x = W / 2;
+      ball.y = H / 2;
+      ball.vx = 0;
+      ball.vy = 0;
+      serving = true;
+      serveTimer = 0.8;
+      serveDir = dir;
+    }
+
+    function serveBall() {
+      const speed = W * BALL_START_SPEED;
+      const angle = (Math.random() - 0.5) * 0.8; // slight random angle
+      ball.vx = Math.cos(angle) * speed * serveDir;
+      ball.vy = Math.sin(angle) * speed;
+      serving = false;
+    }
+
+    initPositions();
+    resetBall(1);
+
+    // --- AI for non-active paddle ---
+    function aiMove(paddle, dt) {
+      const speed = H * PADDLE_SPEED_RATIO * 0.7; // AI slightly slower
+      const center = paddle.y + paddle.h / 2;
+      const target = ball.y;
+      const diff = target - center;
+      const move = Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
+      paddle.y = clamp(paddle.y + move, 0, H - paddle.h);
+    }
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    // --- UPDATE ---
+    let lastTime = performance.now();
+
+    function update(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      // Recalc sizes on resize
+      const gkH = H * GK_H_RATIO;
+      const ofH = H * OF_H_RATIO;
+      gkL.h = gkH; gkR.h = gkH;
+      ofL.h = ofH; ofR.h = ofH;
+      gkL.x = 25;
+      gkR.x = W - 25 - PADDLE_W;
+
+      const pSpeed = H * PADDLE_SPEED_RATIO;
+
+      // --- Left player controls (WASD) ---
+      const pL = activeL === 'gk' ? gkL : ofL;
+      if (keys['KeyW']) pL.y -= pSpeed * dt;
+      if (keys['KeyS']) pL.y += pSpeed * dt;
+      if (activeL === 'of') {
+        // OF can also move horizontally
+        if (keys['KeyA']) ofL.x -= pSpeed * dt;
+        if (keys['KeyD']) ofL.x += pSpeed * dt;
+        ofL.x = clamp(ofL.x, gkL.x + gkL.w + 10, W / 2 - ofL.w - 10);
+      }
+      pL.y = clamp(pL.y, 0, H - pL.h);
+
+      // AI for the non-active left paddle
+      const aiL = activeL === 'gk' ? ofL : gkL;
+      aiMove(aiL, dt);
+
+      // --- Right player controls (Arrow keys) ---
+      const pR = activeR === 'gk' ? gkR : ofR;
+      if (keys['ArrowUp']) pR.y -= pSpeed * dt;
+      if (keys['ArrowDown']) pR.y += pSpeed * dt;
+      if (activeR === 'of') {
+        if (keys['ArrowLeft']) ofR.x -= pSpeed * dt;
+        if (keys['ArrowRight']) ofR.x += pSpeed * dt;
+        ofR.x = clamp(ofR.x, W / 2 + 10, gkR.x - ofR.w - 10);
+      }
+      pR.y = clamp(pR.y, 0, H - pR.h);
+
+      // AI for non-active right paddle
+      const aiR = activeR === 'gk' ? ofR : gkR;
+      aiMove(aiR, dt);
+
+      // --- Serve ---
+      if (serving) {
+        serveTimer -= dt;
+        if (serveTimer <= 0) serveBall();
+        return;
+      }
+
+      // --- Ball movement ---
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+
+      // Top/bottom bounce
+      if (ball.y - ball.size / 2 < 0) {
+        ball.y = ball.size / 2;
+        ball.vy = Math.abs(ball.vy);
+      }
+      if (ball.y + ball.size / 2 > H) {
+        ball.y = H - ball.size / 2;
+        ball.vy = -Math.abs(ball.vy);
+      }
+
+      // Paddle collisions
+      checkPaddleHit(gkL, true);
+      checkPaddleHit(gkR, false);
+      checkPaddleHit(ofL, true);
+      checkPaddleHit(ofR, false);
+
+      // Goals (ball exits left or right)
+      if (ball.x < 0) {
+        scoreR++;
+        resetBall(-1); // serve toward left (scorer gets served to)
+      }
+      if (ball.x > W) {
+        scoreL++;
+        resetBall(1);
+      }
+    }
+
+    function checkPaddleHit(p, isLeft) {
+      // AABB check
+      if (ball.x + ball.size / 2 > p.x &&
+          ball.x - ball.size / 2 < p.x + p.w &&
+          ball.y + ball.size / 2 > p.y &&
+          ball.y - ball.size / 2 < p.y + p.h) {
+
+        // Push ball out
+        if (isLeft) {
+          ball.x = p.x + p.w + ball.size / 2;
+        } else {
+          ball.x = p.x - ball.size / 2;
+        }
+
+        // Angle based on where ball hit the paddle
+        const hitPos = (ball.y - (p.y + p.h / 2)) / (p.h / 2);
+        const angle = clamp(hitPos, -1, 1) * MAX_BOUNCE_ANGLE;
+        const speed = Math.min(
+          Math.hypot(ball.vx, ball.vy) * BALL_ACCEL,
+          W * BALL_MAX_SPEED
+        );
+
+        ball.vx = Math.cos(angle) * speed * (isLeft ? 1 : -1);
+        ball.vy = Math.sin(angle) * speed;
+      }
+    }
+
+    // --- RENDER ---
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+
+      // Center dashed line
+      ctx.setLineDash([10, 10]);
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Paddles
+      ctx.fillStyle = '#fff';
+      drawPaddle(gkL);
+      drawPaddle(gkR);
+      drawPaddle(ofL);
+      drawPaddle(ofR);
+
+      // Active indicators (small dot above controlled paddle)
+      ctx.fillStyle = '#ff0';
+      const aL = activeL === 'gk' ? gkL : ofL;
+      ctx.beginPath();
+      ctx.arc(aL.x + aL.w / 2, aL.y - 6, 3, 0, Math.PI * 2);
+      ctx.fill();
+      const aR = activeR === 'gk' ? gkR : ofR;
+      ctx.beginPath();
+      ctx.arc(aR.x + aR.w / 2, aR.y - 6, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Ball
+      if (!serving) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(
+          ball.x - ball.size / 2,
+          ball.y - ball.size / 2,
+          ball.size, ball.size
+        );
+      }
+
+      // Score
+      ctx.fillStyle = '#fff';
+      ctx.font = '32px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(scoreL, W / 2 - 60, 40);
+      ctx.fillText(scoreR, W / 2 + 60, 40);
+
+      // Controls hint (fades after 5 seconds)
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('P1: WASD + LShift to switch  |  P2: Arrows + RShift to switch', W / 2, H - 12);
+    }
+
+    function drawPaddle(p) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+    }
+
+    // --- LOOP ---
+    function loop(now) {
+      update(now);
+      render();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
 </body>
 </html>
