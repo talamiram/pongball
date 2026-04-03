@@ -36,7 +36,7 @@
     // ─── CONSTANTS ───
     const PADDLE_W = 10;
     const OF_H_RATIO = 0.08;
-    const GK_H_RATIO = 0.04;          // half of outfield
+    const GK_H_RATIO = 0.04;
     const BALL_SIZE = 8;
     const OF_SPEED_RATIO = 0.50;
     const BALL_START_SPEED = 0.20;
@@ -50,14 +50,15 @@
     // ─── STATE ───
     let scoreL = 0, scoreR = 0;
     let ball, gkL, gkR, ofL, ofR;
-    let serving = true;
-    let serveTimer = 0;
-    let serveDir = 1;
 
-    // Hold mechanic
-    let held = false;          // is the player holding the ball?
-    let holdPaddle = null;     // which paddle is holding it
-    let holdOffsetY = 0;       // ball offset from paddle center
+    // Ball state: 'on_gk' (sitting on goalkeeper), 'held' (caught by outfield), 'live' (in play)
+    let ballState = 'on_gk';
+    let holdPaddle = null;
+    let holdOffsetY = 0;
+    let serveFromLeft = true;      // which GK has the ball for serve
+
+    // Pause after goal before ball appears on GK
+    let goalPause = 0;
 
     // Track paddle velocity for spin
     let ofLPrevY = 0;
@@ -77,6 +78,9 @@
       return false;
     }
 
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    // ─── INIT ───
     function initPositions() {
       const gkH = H * GK_H_RATIO;
       const ofH = H * OF_H_RATIO;
@@ -86,49 +90,63 @@
       ofL = { x: W * 0.30, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
       ofR = { x: W * 0.70 - PADDLE_W, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
 
-      ball = { x: W / 2, y: H / 2, vx: 0, vy: 0, size: BALL_SIZE };
+      ball = { x: 0, y: 0, vx: 0, vy: 0, size: BALL_SIZE };
     }
 
-    function resetBall(dir) {
-      ball.x = W / 2;
-      ball.y = H / 2;
+    function resetAfterGoal(servingLeft) {
+      serveFromLeft = servingLeft;
+      ballState = 'on_gk';
+      holdPaddle = null;
       ball.vx = 0;
       ball.vy = 0;
-      serving = true;
-      serveTimer = 1.0;
-      serveDir = dir;
-      held = false;
+      goalPause = 0.6;  // brief pause before ball appears
+    }
+
+    // ─── SERVE FROM GK ───
+    function serveFromGK() {
+      const gk = serveFromLeft ? gkL : gkR;
+      const dir = serveFromLeft ? 1 : -1;
+      const speed = W * BALL_START_SPEED;
+      const angle = (Math.random() - 0.5) * 0.4;
+
+      ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2 : gk.x - ball.size / 2 - 2;
+      ball.vx = Math.cos(angle) * speed * dir;
+      ball.vy = Math.sin(angle) * speed;
+      ballState = 'live';
+    }
+
+    // AI serve (when right GK has ball)
+    let aiServeTimer = 0;
+    function aiServeDelay() {
+      aiServeTimer = 0.5 + Math.random() * 1.0; // wait 0.5–1.5s then serve
+    }
+
+    // ─── SHOOT FROM OUTFIELD ───
+    function shootFromOutfield() {
+      if (ballState !== 'held' || !holdPaddle) return;
+
+      const speed = W * BALL_START_SPEED * 1.4;
+      const spinInfluence = clamp(ofLVelY / (H * 0.5), -1, 1);
+      const shootAngle = spinInfluence * MAX_BOUNCE_ANGLE * 0.8;
+
+      // Shoot toward opponent goal (right)
+      ball.vx = Math.cos(shootAngle) * speed;
+      ball.vy = Math.sin(shootAngle) * speed + ofLVelY * 0.25;
+
+      ballState = 'live';
       holdPaddle = null;
     }
-
-    function serveBall() {
-      const speed = W * BALL_START_SPEED;
-      const angle = (Math.random() - 0.5) * 0.5;
-      ball.vx = Math.cos(angle) * speed * serveDir;
-      ball.vy = Math.sin(angle) * speed;
-      serving = false;
-    }
-
-    initPositions();
-    resetBall(1);
-
-    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
     // ─── GOALKEEPER AI ───
     function gkAI(gk, skill, dt) {
       const maxSpeed = H * 0.45 * skill;
       const center = gk.y + gk.h / 2;
 
-      // Only actively track when ball is heading toward this GK
       const ballComingLeft = ball.vx < 0 && gk.x < W / 2;
       const ballComingRight = ball.vx > 0 && gk.x > W / 2;
-      const active = ballComingLeft || ballComingRight || held;
+      const active = ballComingLeft || ballComingRight || ballState !== 'live';
 
-      let target = ball.y;
-      if (!active) {
-        // Drift back toward center when ball going away
-        target = H / 2;
-      }
+      let target = active ? ball.y : H / 2;
 
       const lag = active ? (1.0 - skill * 0.7) : 0.95;
       const effective = center + (target - center) * (1 - lag);
@@ -142,11 +160,9 @@
       const speed = H * OF_SPEED_RATIO * 0.72;
       const cy = of.y + of.h / 2;
 
-      // Track ball Y with slight prediction
       let targetY = ball.y;
       if (ball.vx > 0) {
-        // Ball coming toward us — predict where it'll be
-        const timeToReach = Math.max(0, (of.x - ball.x) / ball.vx);
+        const timeToReach = Math.max(0, (of.x - ball.x) / Math.max(ball.vx, 1));
         targetY = ball.y + ball.vy * timeToReach * 0.6;
       }
 
@@ -154,45 +170,38 @@
       of.y += Math.sign(diffY) * Math.min(Math.abs(diffY), speed * dt);
       of.y = clamp(of.y, 0, H - of.h);
 
-      // X positioning — stay between ball and goal
       let idealX;
       if (ball.vx > 0) {
         idealX = clamp(ball.x + 80, W / 2 + 20, gkR.x - of.w - 40);
       } else {
-        idealX = W * 0.68;  // default position when ball going away
+        idealX = W * 0.68;
       }
       const diffX = idealX - of.x;
       of.x += Math.sign(diffX) * Math.min(Math.abs(diffX), speed * 0.5 * dt);
       of.x = clamp(of.x, W / 2 + 10, gkR.x - of.w - 10);
     }
 
-    // ─── PHYSICS: sub-stepped collision ───
+    // ─── PADDLE COLLISION ───
     function hitPaddle(p, isLeft) {
       if (ball.x + ball.size / 2 > p.x &&
           ball.x - ball.size / 2 < p.x + p.w &&
           ball.y + ball.size / 2 > p.y &&
           ball.y - ball.size / 2 < p.y + p.h) {
 
-        // Depenetrate
         if (isLeft) {
           ball.x = p.x + p.w + ball.size / 2 + 1;
         } else {
           ball.x = p.x - ball.size / 2 - 1;
         }
 
-        // Hit position determines angle (-1 to 1, top to bottom of paddle)
         const hitPos = (ball.y - (p.y + p.h / 2)) / (p.h / 2);
         const angle = clamp(hitPos, -1, 1) * MAX_BOUNCE_ANGLE;
-
-        // Speed increases slightly each hit
         const currentSpeed = Math.hypot(ball.vx, ball.vy);
         const newSpeed = Math.min(currentSpeed * BALL_ACCEL, W * BALL_MAX_SPEED);
 
         ball.vx = Math.cos(angle) * newSpeed * (isLeft ? 1 : -1);
         ball.vy = Math.sin(angle) * newSpeed;
 
-        // Add paddle movement as spin (vertical velocity influence)
-        // Player's paddle gets more spin influence
         if (p === ofL) {
           ball.vy += ofLVelY * 0.35;
         }
@@ -202,8 +211,8 @@
       return false;
     }
 
+    // ─── PHYSICS ───
     function physicsStep(dt) {
-      // Sub-step to prevent tunneling at high speed
       const speed = Math.hypot(ball.vx, ball.vy);
       const maxStep = ball.size * 0.5;
       const totalDist = speed * dt;
@@ -217,57 +226,46 @@
         // Wall bounce
         if (ball.y - ball.size / 2 < 0) {
           ball.y = ball.size / 2;
-          ball.vy = Math.abs(ball.vy) * 0.98;  // slight energy loss
+          ball.vy = Math.abs(ball.vy) * 0.98;
         }
         if (ball.y + ball.size / 2 > H) {
           ball.y = H - ball.size / 2;
           ball.vy = -Math.abs(ball.vy) * 0.98;
         }
 
-        // Paddle hits — check if player's OF catches it
-        if (!held && hitPaddle(ofL, true)) {
-          // Player paddle: auto-catch if moving slowly enough
-          // or if space is held
-          // Actually: just catch it always on player paddle
-          held = true;
+        // Player outfield catches the ball
+        if (hitPaddle(ofL, true)) {
+          ballState = 'held';
           holdPaddle = ofL;
-          holdOffsetY = ball.y - (ofL.y + ofL.h / 2);
+          holdOffsetY = clamp(ball.y - (ofL.y + ofL.h / 2), -ofL.h / 2, ofL.h / 2);
           ball.vx = 0;
           ball.vy = 0;
           return;
         }
 
+        // Other paddles just bounce
         hitPaddle(gkL, true);
         hitPaddle(gkR, false);
         hitPaddle(ofR, false);
 
         // Goals
-        if (ball.x + ball.size / 2 < 0) { scoreR++; resetBall(-1); return; }
-        if (ball.x - ball.size / 2 > W) { scoreL++; resetBall(1); return; }
+        if (ball.x + ball.size / 2 < 0) {
+          scoreR++;
+          resetAfterGoal(true);  // left GK gets the ball (conceded)
+          return;
+        }
+        if (ball.x - ball.size / 2 > W) {
+          scoreL++;
+          resetAfterGoal(false);  // right GK gets the ball
+          return;
+        }
       }
-    }
-
-    // ─── RELEASE / SHOOT ───
-    function releaseBall() {
-      if (!held || !holdPaddle) return;
-
-      const speed = W * BALL_START_SPEED * 1.4;  // shoot is a bit faster than serve
-
-      // Shoot direction: influenced by player's vertical movement
-      // Moving up while shooting = upward angle, etc.
-      let shootAngle = 0;
-      const spinInfluence = clamp(ofLVelY / (H * 0.5), -1, 1);
-      shootAngle = spinInfluence * MAX_BOUNCE_ANGLE * 0.8;
-
-      ball.vx = Math.cos(shootAngle) * speed;  // always shoots right (toward opponent)
-      ball.vy = Math.sin(shootAngle) * speed + ofLVelY * 0.25;
-
-      held = false;
-      holdPaddle = null;
     }
 
     // ─── UPDATE ───
     let lastTime = performance.now();
+    initPositions();
+    resetAfterGoal(true);  // start with ball on left GK
 
     function update(now) {
       const dt = Math.min((now - lastTime) / 1000, 0.05);
@@ -282,8 +280,6 @@
       gkR.x = W - 15 - PADDLE_W;
 
       const pSpeed = H * OF_SPEED_RATIO;
-
-      // Track player paddle velocity
       const prevY = ofLPrevY;
 
       // Player controls (Arrow keys)
@@ -294,37 +290,65 @@
       ofL.x = clamp(ofL.x, gkL.x + gkL.w + 10, W / 2 - ofL.w - 10);
       ofL.y = clamp(ofL.y, 0, H - ofL.h);
 
-      // Compute paddle velocity for spin
       ofLVelY = (ofL.y - prevY) / Math.max(dt, 0.001);
       ofLPrevY = ofL.y;
-
-      // Release ball with Space
-      if (consumePress('Space') && held) {
-        releaseBall();
-      }
 
       // AI
       gkAI(gkL, GK_SKILL_LEFT, dt);
       gkAI(gkR, GK_SKILL_RIGHT, dt);
       ofAI(ofR, dt);
 
-      // Serve
-      if (serving) {
-        serveTimer -= dt;
-        if (serveTimer <= 0) serveBall();
+      // ─── Ball state machine ───
+
+      // Goal pause countdown
+      if (goalPause > 0) {
+        goalPause -= dt;
         return;
       }
 
-      // Ball held: stick to paddle
-      if (held && holdPaddle) {
+      // Ball sitting on GK — waiting for serve
+      if (ballState === 'on_gk') {
+        const gk = serveFromLeft ? gkL : gkR;
+        // Ball sticks to the GK paddle
+        if (serveFromLeft) {
+          ball.x = gk.x + gk.w + ball.size / 2 + 2;
+        } else {
+          ball.x = gk.x - ball.size / 2 - 2;
+        }
+        ball.y = gk.y + gk.h / 2;
+
+        // Player serves with Space (when it's left GK)
+        if (serveFromLeft && consumePress('Space')) {
+          serveFromGK();
+          return;
+        }
+
+        // AI serves after a delay (when it's right GK)
+        if (!serveFromLeft) {
+          if (aiServeTimer <= 0) {
+            aiServeDelay();
+          }
+          aiServeTimer -= dt;
+          if (aiServeTimer <= 0) {
+            serveFromGK();
+          }
+        }
+        return;
+      }
+
+      // Ball held by outfield — Space to shoot
+      if (ballState === 'held' && holdPaddle) {
         ball.x = holdPaddle.x + holdPaddle.w + ball.size / 2 + 2;
         ball.y = holdPaddle.y + holdPaddle.h / 2 + holdOffsetY;
-        // Keep ball on screen
         ball.y = clamp(ball.y, ball.size / 2, H - ball.size / 2);
+
+        if (consumePress('Space')) {
+          shootFromOutfield();
+        }
         return;
       }
 
-      // Physics
+      // Ball is live
       physicsStep(dt);
     }
 
@@ -381,8 +405,8 @@
       ctx.fillRect(ofL.x, ofL.y, ofL.w, ofL.h);
       ctx.fillRect(ofR.x, ofR.y, ofR.w, ofR.h);
 
-      // Ball
-      if (!serving || held) {
+      // Ball (show when not in goal-pause)
+      if (goalPause <= 0) {
         ctx.fillStyle = '#fff';
         ctx.fillRect(
           ball.x - ball.size / 2,
@@ -391,12 +415,18 @@
         );
       }
 
-      // "HOLD" indicator when ball is held
-      if (held) {
+      // Prompts
+      if (ballState === 'on_gk' && serveFromLeft && goalPause <= 0) {
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.font = '11px monospace';
+        ctx.font = '12px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('SPACE to shoot', W / 2, 20);
+        ctx.fillText('SPACE to serve', W / 2, 22);
+      }
+      if (ballState === 'held') {
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('SPACE to shoot', W / 2, 22);
       }
 
       // Score
@@ -407,10 +437,10 @@
       ctx.fillText(scoreR, W / 2 + 60, 50);
 
       // Controls hint
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
       ctx.font = '11px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('Arrows = move  |  Catch ball + Space = shoot', W / 2, H - 10);
+      ctx.fillText('Arrows = move  |  Space = serve / shoot', W / 2, H - 10);
     }
 
     // ─── LOOP ───
