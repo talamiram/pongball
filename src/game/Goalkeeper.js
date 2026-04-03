@@ -1,6 +1,5 @@
 import { GK_W, GK_H, GK_YMIN, GK_YMAX, GK_SPEED, FIELD_MID_Y } from '../constants.js';
 import { clamp } from '../utils/math.js';
-import { drawJersey } from '../utils/draw.js';
 
 export class Goalkeeper {
   constructor(x, team, isLeft) {
@@ -12,7 +11,7 @@ export class Goalkeeper {
     this.isLeft = isLeft;
     this.vx = 0;
     this.vy = 0;
-    this.active = false; // highlighted when player-controlled
+    this.active = false;
   }
 
   moveUp(dt)   { this.vy = -GK_SPEED; this.y = clamp(this.y - GK_SPEED * dt, GK_YMIN, GK_YMAX); }
@@ -27,27 +26,15 @@ export class Goalkeeper {
   }
 
   render(ctx) {
-    const cx = this.x + this.w / 2;
-    const cy = this.y + this.h / 2;
+    // Simple white rectangle
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(this.x, this.y, this.w, this.h);
 
-    if (this.active) {
-      // Glow
-      ctx.save();
-      ctx.shadowColor = '#ffff00';
-      ctx.shadowBlur = 14;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-    }
-
-    drawJersey(ctx, cx, cy, this.w, this.h, this.team.primary, this.team.secondary, '');
-
-    if (this.active) ctx.restore();
-
-    // Active indicator dot
+    // Active indicator — small yellow dot above paddle
     if (this.active) {
       ctx.fillStyle = '#ffff00';
       ctx.beginPath();
-      ctx.arc(cx, this.y - 8, 4, 0, Math.PI * 2);
+      ctx.arc(this.x + this.w / 2, this.y - 6, 3, 0, Math.PI * 2);
       ctx.fill();
     }
   }

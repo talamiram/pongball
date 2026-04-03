@@ -1,9 +1,8 @@
 import {
-  FIELD_MID_X, FIELD_MID_Y, BALL_RADIUS, BALL_INITIAL_SPEED, BALL_TRAIL_LEN,
+  FIELD_MID_X, FIELD_MID_Y, BALL_RADIUS, BALL_INITIAL_SPEED,
   FIELD_TOP, FIELD_BOTTOM,
 } from '../constants.js';
-import { drawSoccerBall } from '../utils/draw.js';
-import { randomSign, randomRange } from '../utils/math.js';
+import { randomRange } from '../utils/math.js';
 
 export class Ball {
   constructor() {
@@ -12,8 +11,7 @@ export class Ball {
     this.vx = 0;
     this.vy = 0;
     this.r = BALL_RADIUS;
-    this.trail = [];
-    this.active = false; // false = waiting for kickoff
+    this.active = false;
   }
 
   reset(serveToLeft = true) {
@@ -23,7 +21,6 @@ export class Ball {
     const speed = BALL_INITIAL_SPEED;
     this.vx = Math.cos(angle) * speed * (serveToLeft ? -1 : 1);
     this.vy = Math.sin(angle) * speed;
-    this.trail = [];
     this.active = false;
   }
 
@@ -33,10 +30,6 @@ export class Ball {
 
   update(dt) {
     if (!this.active) return;
-
-    // Store trail
-    this.trail.push({ x: this.x, y: this.y });
-    if (this.trail.length > BALL_TRAIL_LEN) this.trail.shift();
 
     this.x += this.vx * dt;
     this.y += this.vy * dt;
@@ -57,24 +50,12 @@ export class Ball {
   }
 
   render(ctx) {
-    // Trail
-    for (let i = 0; i < this.trail.length; i++) {
-      const alpha = (i / this.trail.length) * 0.35;
-      const tr = this.trail[i];
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(tr.x, tr.y, this.r * 0.7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Ball
-    drawSoccerBall(ctx, this.x, this.y, this.r);
+    // Classic Pong square ball
+    const size = this.r * 2;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(this.x - this.r, this.y - this.r, size, size);
   }
 
-  /** Bounding box for AABB collision */
   get left()   { return this.x - this.r; }
   get right()  { return this.x + this.r; }
   get top()    { return this.y - this.r; }

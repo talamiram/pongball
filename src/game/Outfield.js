@@ -6,7 +6,6 @@ import {
   FIELD_MID_Y,
 } from '../constants.js';
 import { clamp } from '../utils/math.js';
-import { drawJersey } from '../utils/draw.js';
 
 export class Outfield {
   constructor(x, team, isLeft) {
@@ -47,23 +46,15 @@ export class Outfield {
   }
 
   render(ctx) {
-    const cx = this.x + this.w / 2;
-    const cy = this.y + this.h / 2;
+    // Simple white rectangle
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(this.x, this.y, this.w, this.h);
 
-    if (this.active) {
-      ctx.save();
-      ctx.shadowColor = '#ffff00';
-      ctx.shadowBlur = 14;
-    }
-
-    drawJersey(ctx, cx, cy, this.w, this.h, this.team.primary, this.team.secondary, '');
-
-    if (this.active) ctx.restore();
-
+    // Active indicator — small yellow dot above paddle
     if (this.active) {
       ctx.fillStyle = '#ffff00';
       ctx.beginPath();
-      ctx.arc(cx, this.y - 8, 4, 0, Math.PI * 2);
+      ctx.arc(this.x + this.w / 2, this.y - 6, 3, 0, Math.PI * 2);
       ctx.fill();
     }
   }
