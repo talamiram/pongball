@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PongBall</title>
+  <title>PongBall — Italy vs Argentina</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -29,57 +29,114 @@
       H = window.innerHeight;
       canvas.width = W;
       canvas.height = H;
+      if (leftTeam) repositionAll();
     }
     resize();
     window.addEventListener('resize', resize);
 
-    // ─── CONSTANTS ───
-    const PADDLE_W = 10;
-    const OF_H_RATIO = 0.08;
-    const GK_H_RATIO = 0.04;
-    const BALL_SIZE = 8;
-    const OF_SPEED_RATIO = 0.50;
-    const GK_SPEED_RATIO = 0.40;
-    const BALL_START_SPEED = 0.20;
-    const BALL_MAX_SPEED = 0.55;
-    const BALL_ACCEL = 1.03;
-    const MAX_BOUNCE_ANGLE = Math.PI / 3;
-    const HOLD_TIME_LIMIT = 2.0;        // seconds before auto-release
-    const GRAVITY = 1200;               // pixels/s² — pulls lobbed ball back down
-    const LOB_HEIGHT_GK = 0.35;         // z launch velocity multiplier for GK serve lob
-    const LOB_HEIGHT_OF = 0.45;         // z launch velocity multiplier for outfield shot lob
-    const AIR_THRESHOLD = 8;            // ball.z above this = "in the air" (skips paddle catch)
+    // ─── TEAMS: ITALIA 90 SEMIFINAL ───
+    const TEAM_LEFT = {
+      name: 'Argentina', short: 'ARG',
+      primary: '#75AADB', secondary: '#fff',
+      gk:  { num: 12, name: 'Goycochea' },
+      def: [
+        { num: 14, name: 'Giusti' },
+        { num: 18, name: 'Serrizuela' },
+        { num: 19, name: 'Ruggeri' },
+        { num: 16, name: 'Olarticoechea' }
+      ],
+      mid: [
+        { num: 20, name: 'Simón' },
+        { num: 4,  name: 'Basualdo' },
+        { num: 7,  name: 'Burruchaga' },
+        { num: 6,  name: 'Calderón' }
+      ],
+      fwd: [
+        { num: 10, name: 'Maradona', captain: true },
+        { num: 8,  name: 'Caniggia' }
+      ]
+    };
 
-    const GK_SKILL_LEFT = 0.75;
-    const GK_SKILL_RIGHT = 0.65;
+    const TEAM_RIGHT = {
+      name: 'Italy', short: 'ITA',
+      primary: '#003DA5', secondary: '#fff',
+      gk:  { num: 1,  name: 'Zenga' },
+      def: [
+        { num: 2,  name: 'Bergomi' },
+        { num: 6,  name: 'Baresi', captain: true },
+        { num: 5,  name: 'Ferri' },
+        { num: 3,  name: 'Maldini' }
+      ],
+      mid: [
+        { num: 7,  name: 'Donadoni' },
+        { num: 8,  name: 'De Napoli' },
+        { num: 16, name: 'Berti' },
+        { num: 11, name: 'Giannini' }
+      ],
+      fwd: [
+        { num: 19, name: 'Schillaci' },
+        { num: 15, name: 'Baggio' }
+      ]
+    };
+
+    // ─── CONSTANTS ───
+    const PADDLE_W_GK = 8;
+    const PADDLE_W_OF = 5;
+    const PADDLE_W_PLAYER = 7;
+    const GK_H_RATIO = 0.07;
+    const DEF_H_RATIO = 0.045;
+    const MID_H_RATIO = 0.038;
+    const FWD_H_RATIO = 0.05;
+    const PLAYER_H_RATIO = 0.055;
+    const BALL_SIZE = 7;
+
+    const BALL_SPEED = 0.22;            // constant shot speed (ratio of W)
+    const BALL_MAX_SPEED = 0.50;
+    const BALL_ACCEL = 1.02;
+    const MAX_BOUNCE_ANGLE = Math.PI / 3;
+    const HOLD_TIME_LIMIT = 2.0;
+
+    const GRAVITY = 900;                // pulls lobbed ball down
+    const LOB_POWER = 0.9;              // vz = chargeTime * H * LOB_POWER
+    const AIR_THRESHOLD = 10;
+
+    const GOAL_HEIGHT_RATIO = 0.30;     // goal mouth = 30% of screen height
+    const POST_THICK = 6;               // goal post thickness
+    const GOAL_DEPTH = 18;              // how deep the goal net goes behind line
+
+    const GK_SKILL_LEFT = 0.72;
+    const GK_SKILL_RIGHT = 0.68;
+    const OF_SPEED_RATIO = 0.45;
+    const GK_SPEED_RATIO = 0.40;
+
+    // Formation x-positions (ratio of W, from left edge)
+    const FORM_X = {
+      gkL: 0.025, defL: 0.14, midL: 0.30, fwdL: 0.43,
+      gkR: 0.975, defR: 0.86, midR: 0.70, fwdR: 0.57
+    };
 
     // ─── STATE ───
     let scoreL = 0, scoreR = 0;
-    let ball, gkL, gkR, ofL, ofR;
+    let ball;
+    let leftTeam, rightTeam;  // { gk, players[], mainFwd }
+    let allPaddles = [];       // flat list of every paddle for collision
 
-    // Ball state: 'on_gk', 'held_player', 'held_ai', 'live'
-    let ballState = 'on_gk';
+    let ballState = 'on_gk';  // 'on_gk', 'held_player', 'held_ai', 'live'
     let holdPaddle = null;
     let holdOffsetY = 0;
-    let holdTimer = 0;                   // counts up — auto-releases at HOLD_TIME_LIMIT
+    let holdTimer = 0;
     let serveFromLeft = true;
-
     let goalPause = 0;
 
-    // Track paddle velocities for spin
-    let ofLPrevY = 0;
-    let ofLVelY = 0;
-    let ofRPrevY = 0;
-    let ofRVelY = 0;
+    let playerVelY = 0;
+    let playerPrevY = 0;
 
     const keys = {};
-    const justPressed = {};
     const justReleased = {};
-    let spaceHeldTime = 0;           // how long Space has been held
+    let spaceHeldTime = 0;
     let spaceDown = false;
 
     window.addEventListener('keydown', e => {
-      if (!keys[e.code]) justPressed[e.code] = true;
       keys[e.code] = true;
       if (e.code === 'Space' && !spaceDown) {
         spaceDown = true;
@@ -90,33 +147,115 @@
     window.addEventListener('keyup', e => {
       keys[e.code] = false;
       justReleased[e.code] = true;
-      if (e.code === 'Space') {
-        spaceDown = false;
-      }
+      if (e.code === 'Space') spaceDown = false;
     });
 
-    function consumePress(code) {
-      if (justPressed[code]) { justPressed[code] = false; return true; }
-      return false;
-    }
     function consumeRelease(code) {
       if (justReleased[code]) { justReleased[code] = false; return true; }
       return false;
     }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    // ─── GOAL GEOMETRY ───
+    function goalTop()    { return H / 2 - H * GOAL_HEIGHT_RATIO / 2; }
+    function goalBottom() { return H / 2 + H * GOAL_HEIGHT_RATIO / 2; }
+
+    // ─── BUILD TEAM ───
+    function makePaddle(info, role, isLeft, homeXRatio, homeYRatio, teamData) {
+      const w = role === 'gk' ? PADDLE_W_GK :
+                (info._isPlayer ? PADDLE_W_PLAYER : PADDLE_W_OF);
+      const hRatio = role === 'gk' ? GK_H_RATIO :
+                     role === 'def' ? DEF_H_RATIO :
+                     role === 'mid' ? MID_H_RATIO :
+                     (info._isPlayer ? PLAYER_H_RATIO : FWD_H_RATIO);
+      const h = H * hRatio;
+      const homeX = W * homeXRatio - w / 2;
+      const homeY = H * homeYRatio - h / 2;
+
+      return {
+        num: info.num, name: info.name, captain: info.captain || false,
+        role, isLeft, isGK: role === 'gk',
+        isPlayer: info._isPlayer || false,
+        isMainFwd: info._isMainFwd || false,
+        x: homeX, y: homeY, w, h,
+        homeX, homeY, homeXRatio, homeYRatio,
+        hRatio,
+        color: teamData.primary,
+        teamName: teamData.short
+      };
+    }
+
+    function buildTeam(td, isLeft) {
+      const side = isLeft ? 'L' : 'R';
+      const gk = makePaddle(td.gk, 'gk', isLeft, FORM_X['gk' + side], 0.5, td);
+
+      // Y spread for each line
+      const defYs = [0.15, 0.38, 0.62, 0.85];
+      const midYs = [0.15, 0.38, 0.62, 0.85];
+      const fwdYs = [0.37, 0.63];
+
+      const players = [];
+
+      td.def.forEach((p, i) => {
+        players.push(makePaddle(p, 'def', isLeft, FORM_X['def' + side], defYs[i], td));
+      });
+      td.mid.forEach((p, i) => {
+        players.push(makePaddle(p, 'mid', isLeft, FORM_X['mid' + side], midYs[i], td));
+      });
+
+      // Mark main forward (first one for each team)
+      const fwdData = td.fwd.map((p, i) => {
+        const info = { ...p };
+        if (i === 0) {
+          info._isMainFwd = true;
+          if (isLeft) info._isPlayer = true;  // player controls left team's main fwd
+        }
+        return info;
+      });
+      fwdData.forEach((p, i) => {
+        players.push(makePaddle(p, 'fwd', isLeft, FORM_X['fwd' + side], fwdYs[i], td));
+      });
+
+      const mainFwd = players.find(p => p.isMainFwd);
+      return { gk, players, mainFwd, data: td, isLeft };
+    }
+
+    function repositionAll() {
+      // Recalculate positions on resize
+      [leftTeam, rightTeam].forEach(team => {
+        const gk = team.gk;
+        gk.h = H * gk.hRatio;
+        gk.w = PADDLE_W_GK;
+        gk.homeX = W * gk.homeXRatio - gk.w / 2;
+        gk.homeY = H * gk.homeYRatio - gk.h / 2;
+        gk.x = gk.homeX;
+
+        team.players.forEach(p => {
+          p.h = H * p.hRatio;
+          p.w = p.isPlayer ? PADDLE_W_PLAYER : PADDLE_W_OF;
+          p.homeX = W * p.homeXRatio - p.w / 2;
+          p.homeY = H * p.homeYRatio - p.h / 2;
+        });
+      });
+
+      rebuildPaddleList();
+    }
+
+    function rebuildPaddleList() {
+      allPaddles = [];
+      [leftTeam, rightTeam].forEach(t => {
+        allPaddles.push(t.gk);
+        t.players.forEach(p => allPaddles.push(p));
+      });
+    }
 
     // ─── INIT ───
-    function initPositions() {
-      const gkH = H * GK_H_RATIO;
-      const ofH = H * OF_H_RATIO;
-
-      gkL = { x: 15, y: H / 2 - gkH / 2, w: PADDLE_W, h: gkH };
-      gkR = { x: W - 15 - PADDLE_W, y: H / 2 - gkH / 2, w: PADDLE_W, h: gkH };
-      ofL = { x: W * 0.30, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
-      ofR = { x: W * 0.70 - PADDLE_W, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
-
+    function init() {
+      leftTeam = buildTeam(TEAM_LEFT, true);
+      rightTeam = buildTeam(TEAM_RIGHT, false);
+      rebuildPaddleList();
       ball = { x: 0, y: 0, vx: 0, vy: 0, z: 0, vz: 0, size: BALL_SIZE };
+      resetAfterGoal(true);
     }
 
     function resetAfterGoal(servingLeft) {
@@ -124,150 +263,168 @@
       ballState = 'on_gk';
       holdPaddle = null;
       holdTimer = 0;
-      ball.vx = 0;
-      ball.vy = 0;
-      ball.z = 0;
-      ball.vz = 0;
-      goalPause = 0.6;
+      ball.vx = 0; ball.vy = 0;
+      ball.z = 0; ball.vz = 0;
+      goalPause = 0.8;
+      aiServeTimer = 0;
+
+      // Reset formation positions
+      [leftTeam, rightTeam].forEach(team => {
+        team.players.forEach(p => {
+          p.x = p.homeX;
+          p.y = p.homeY;
+        });
+      });
     }
 
     // ─── SERVE FROM GK ───
-    // chargeTime: how long Space was held (0 = quick tap, longer = lob)
     function serveFromGK(chargeTime) {
-      const gk = serveFromLeft ? gkL : gkR;
+      const team = serveFromLeft ? leftTeam : rightTeam;
+      const gk = team.gk;
       const dir = serveFromLeft ? 1 : -1;
+      const charge = chargeTime || 0;
 
-      const charge = clamp(chargeTime, 0, 0.5);  // cap at 0.5s
-      const lobFactor = charge / 0.5;             // 0 = flat, 1 = full lob
+      // Speed is CONSTANT — only height changes with charge
+      const speed = W * BALL_SPEED;
+      const angle = (Math.random() - 0.5) * 0.25;
 
-      // TAP: fast flat pass straight ahead
-      // LOB: much slower horizontally, big vertical angle
-      const tapSpeed = W * BALL_START_SPEED * 1.3;
-      const lobSpeed = W * BALL_START_SPEED * 0.6;
-      const speed = tapSpeed + (lobSpeed - tapSpeed) * lobFactor;
-
-      // Tap = nearly straight (tiny random). Lob = steep angle up or down
-      const tapAngle = (Math.random() - 0.5) * 0.15;
-      const lobAngle = (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.4);
-      const angle = tapAngle + (lobAngle - tapAngle) * lobFactor;
-
-      ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2 : gk.x - ball.size / 2 - 2;
+      ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2
+                             : gk.x - ball.size / 2 - 2;
       ball.vx = Math.cos(angle) * speed * dir;
       ball.vy = Math.sin(angle) * speed;
-      // Lob launches ball into the air (z-axis)
+
+      // Height from charge: longer hold = higher ball
       ball.z = 0;
-      ball.vz = lobFactor * H * LOB_HEIGHT_GK;
+      ball.vz = charge * H * LOB_POWER;
+
       ballState = 'live';
     }
 
     let aiServeTimer = 0;
-    function aiServeDelay() {
-      aiServeTimer = 0.5 + Math.random() * 1.0;
-    }
 
-    // ─── SHOOT FROM OUTFIELD (player or AI) ───
-    // chargeTime: how long Space was held (for player). AI passes 0.
+    // ─── SHOOT FROM PADDLE ───
     function shootFromPaddle(paddle, isLeft, chargeTime) {
       const dir = isLeft ? 1 : -1;
-      const charge = clamp(chargeTime || 0, 0, 0.5);
-      const lobFactor = charge / 0.5;
+      const charge = chargeTime || 0;
 
-      // Tap = fast laser. Hold = slow high lob
-      const tapSpeed = W * BALL_START_SPEED * 1.5;
-      const lobSpeed = W * BALL_START_SPEED * 0.6;
-      const speed = tapSpeed + (lobSpeed - tapSpeed) * lobFactor;
+      // Speed is CONSTANT
+      const speed = W * BALL_SPEED * 1.15;
 
-      const velY = (paddle === ofL) ? ofLVelY : ofRVelY;
+      // Angle from paddle movement (spin)
+      const velY = paddle.isPlayer ? playerVelY : 0;
       const spinInfluence = clamp(velY / (H * 0.5), -1, 1);
-      const baseAngle = spinInfluence * MAX_BOUNCE_ANGLE * 0.8;
+      const angle = spinInfluence * MAX_BOUNCE_ANGLE * 0.7;
 
-      // Lob adds dramatic arc angle
-      const lobAngle = lobFactor * (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.4);
-      const shootAngle = baseAngle + lobAngle;
+      ball.vx = Math.cos(angle) * speed * dir;
+      ball.vy = Math.sin(angle) * speed + velY * 0.2;
 
-      ball.vx = Math.cos(shootAngle) * speed * dir;
-      ball.vy = Math.sin(shootAngle) * speed + velY * 0.25;
-      // Lob launches ball into the air (z-axis)
+      // Height from charge: longer hold = higher ball
       ball.z = 0;
-      ball.vz = lobFactor * H * LOB_HEIGHT_OF;
+      ball.vz = charge * H * LOB_POWER;
 
       ballState = 'live';
       holdPaddle = null;
       holdTimer = 0;
     }
 
-    // ─── GOALKEEPER AI ───
-    function gkAI(gk, skill, dt) {
-      // Don't AI the left GK when player is controlling it (ball on GK)
-      if (ballState === 'on_gk' && serveFromLeft && gk === gkL) return;
+    // ─── GK AI ───
+    function gkAI(team, skill, dt) {
+      const gk = team.gk;
+      // Don't AI left GK when player controls it during serve
+      if (ballState === 'on_gk' && serveFromLeft && team.isLeft) return;
 
-      const maxSpeed = H * 0.45 * skill;
-      const center = gk.y + gk.h / 2;
+      const maxSpeed = H * GK_SPEED_RATIO * skill;
+      const cy = gk.y + gk.h / 2;
 
-      const ballComingLeft = ball.vx < 0 && gk.x < W / 2;
-      const ballComingRight = ball.vx > 0 && gk.x > W / 2;
-      const active = ballComingLeft || ballComingRight || ballState !== 'live';
-
-      let target = active ? ball.y : H / 2;
-
+      const onThisSide = team.isLeft ? (ball.vx < 0) : (ball.vx > 0);
+      const active = onThisSide || ballState !== 'live';
+      const target = active ? ball.y : H / 2;
       const lag = active ? (1.0 - skill * 0.7) : 0.95;
-      const effective = center + (target - center) * (1 - lag);
-      const diff = effective - center;
+      const effective = cy + (target - cy) * (1 - lag);
+      const diff = effective - cy;
       const move = Math.sign(diff) * Math.min(Math.abs(diff), maxSpeed * dt);
+
       gk.y = clamp(gk.y + move, 0, H - gk.h);
     }
 
-    // ─── OUTFIELD AI (right side) ───
+    // ─── FORMATION AI ───
     let aiShootTimer = 0;
 
-    function ofAI(of, dt) {
-      const speed = H * OF_SPEED_RATIO * 0.72;
-      const cy = of.y + of.h / 2;
+    function formationAI(paddle, dt) {
+      if (paddle.isPlayer) return;  // player-controlled
 
-      // If AI is holding the ball, aim then shoot
-      if (ballState === 'held_ai' && holdPaddle === of) {
-        // Move toward a good shooting position
-        const targetY = H / 2 + (Math.random() - 0.5) * H * 0.3;
-        const diffY = targetY - cy;
-        of.y += Math.sign(diffY) * Math.min(Math.abs(diffY), speed * dt);
-        of.y = clamp(of.y, 0, H - of.h);
+      const speed = H * OF_SPEED_RATIO * (paddle.role === 'fwd' ? 0.7 : 0.55);
+      const cy = paddle.y + paddle.h / 2;
 
-        aiShootTimer -= dt;
-        if (aiShootTimer <= 0) {
-          shootFromPaddle(of, false);
+      // Main forward AI (can hold ball)
+      if (paddle.isMainFwd && !paddle.isLeft) {
+        // Right team main forward — can catch and shoot
+        if (ballState === 'held_ai' && holdPaddle === paddle) {
+          // Aim toward goal then shoot
+          const targetY = H / 2 + (Math.random() - 0.5) * H * 0.2;
+          const diff = targetY - cy;
+          paddle.y += Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
+          paddle.y = clamp(paddle.y, 0, H - paddle.h);
+          aiShootTimer -= dt;
+          if (aiShootTimer <= 0) {
+            shootFromPaddle(paddle, false, Math.random() * 0.4);
+          }
+          return;
         }
-        return;
       }
 
-      let targetY = ball.y;
-      if (ball.vx > 0) {
-        const timeToReach = Math.max(0, (of.x - ball.x) / Math.max(ball.vx, 1));
-        targetY = ball.y + ball.vy * timeToReach * 0.6;
+      // General formation AI: track ball within home zone
+      let targetY = paddle.homeY + paddle.h / 2;  // default: home
+      const ballDist = Math.abs(ball.x - (paddle.x + paddle.w / 2));
+      const fieldW = W;
+
+      // More active when ball is nearby
+      const activeFactor = clamp(1 - ballDist / (fieldW * 0.4), 0, 1);
+
+      if (ballState === 'live' && activeFactor > 0.1) {
+        // Track ball y with some lag, weighted by proximity
+        const ballTarget = ball.y;
+        targetY = paddle.homeY + paddle.h / 2 + (ballTarget - (paddle.homeY + paddle.h / 2)) * activeFactor * 0.6;
       }
 
-      const diffY = targetY - cy;
-      of.y += Math.sign(diffY) * Math.min(Math.abs(diffY), speed * dt);
-      of.y = clamp(of.y, 0, H - of.h);
+      // Move toward target
+      const diff = targetY - cy;
+      const moveAmount = Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
+      paddle.y += moveAmount;
 
-      let idealX;
-      if (ball.vx > 0) {
-        idealX = clamp(ball.x + 80, W / 2 + 20, gkR.x - of.w - 40);
-      } else {
-        idealX = W * 0.68;
+      // Stay within reasonable zone (don't pile up)
+      const zoneMargin = H * 0.08;
+      const minY = Math.max(0, paddle.homeY - zoneMargin * 3);
+      const maxY = Math.min(H - paddle.h, paddle.homeY + zoneMargin * 3);
+      paddle.y = clamp(paddle.y, minY, maxY);
+
+      // Slight x-movement for forwards (push up / fall back)
+      if (paddle.role === 'fwd' || paddle.role === 'mid') {
+        const ballOnThisSide = paddle.isLeft ? (ball.x < W / 2) : (ball.x > W / 2);
+        const idealX = ballOnThisSide ? paddle.homeX - (paddle.isLeft ? 20 : -20)
+                                      : paddle.homeX + (paddle.isLeft ? 30 : -30);
+        const diffX = idealX - paddle.x;
+        paddle.x += Math.sign(diffX) * Math.min(Math.abs(diffX), speed * 0.3 * dt);
+
+        // Clamp x to stay in own half generally
+        if (paddle.isLeft) {
+          paddle.x = clamp(paddle.x, leftTeam.gk.x + leftTeam.gk.w + 10, W * 0.48);
+        } else {
+          paddle.x = clamp(paddle.x, W * 0.52, rightTeam.gk.x - paddle.w - 10);
+        }
       }
-      const diffX = idealX - of.x;
-      of.x += Math.sign(diffX) * Math.min(Math.abs(diffX), speed * 0.5 * dt);
-      of.x = clamp(of.x, W / 2 + 10, gkR.x - of.w - 10);
     }
 
     // ─── PADDLE COLLISION ───
-    function hitPaddle(p, isLeft) {
+    function hitPaddle(p) {
       if (ball.x + ball.size / 2 > p.x &&
           ball.x - ball.size / 2 < p.x + p.w &&
           ball.y + ball.size / 2 > p.y &&
           ball.y - ball.size / 2 < p.y + p.h) {
 
-        if (isLeft) {
+        // Push ball out
+        const fromLeft = ball.vx > 0;  // ball was moving right, hit left face
+        if (p.isLeft || ball.x < p.x + p.w / 2) {
           ball.x = p.x + p.w + ball.size / 2 + 1;
         } else {
           ball.x = p.x - ball.size / 2 - 1;
@@ -277,17 +434,70 @@
         const angle = clamp(hitPos, -1, 1) * MAX_BOUNCE_ANGLE;
         const currentSpeed = Math.hypot(ball.vx, ball.vy);
         const newSpeed = Math.min(currentSpeed * BALL_ACCEL, W * BALL_MAX_SPEED);
+        const deflectDir = p.isLeft ? 1 : -1;
 
-        ball.vx = Math.cos(angle) * newSpeed * (isLeft ? 1 : -1);
+        ball.vx = Math.cos(angle) * newSpeed * deflectDir;
         ball.vy = Math.sin(angle) * newSpeed;
 
-        // Add paddle spin
-        const velY = (p === ofL) ? ofLVelY : (p === ofR) ? ofRVelY : 0;
-        ball.vy += velY * 0.35;
+        // Spin from player's paddle
+        if (p.isPlayer) ball.vy += playerVelY * 0.3;
 
         return true;
       }
       return false;
+    }
+
+    // ─── GOAL POST COLLISION ───
+    function checkGoalPosts() {
+      const gt = goalTop();
+      const gb = goalBottom();
+
+      // Left goal posts
+      if (ball.x - ball.size / 2 < GOAL_DEPTH) {
+        // Top post
+        if (ball.y - ball.size / 2 < gt && ball.y + ball.size / 2 > gt - POST_THICK) {
+          ball.y = gt - POST_THICK - ball.size / 2;
+          ball.vy = -Math.abs(ball.vy) * 0.8;
+          return 'post';
+        }
+        // Bottom post
+        if (ball.y + ball.size / 2 > gb && ball.y - ball.size / 2 < gb + POST_THICK) {
+          ball.y = gb + POST_THICK + ball.size / 2;
+          ball.vy = Math.abs(ball.vy) * 0.8;
+          return 'post';
+        }
+        // Side wall (above/below goal)
+        if (ball.x - ball.size / 2 < 2) {
+          if (ball.y < gt || ball.y > gb) {
+            ball.x = ball.size / 2 + 2;
+            ball.vx = Math.abs(ball.vx) * 0.85;
+            return 'wall';
+          }
+        }
+      }
+
+      // Right goal posts
+      if (ball.x + ball.size / 2 > W - GOAL_DEPTH) {
+        if (ball.y - ball.size / 2 < gt && ball.y + ball.size / 2 > gt - POST_THICK) {
+          ball.y = gt - POST_THICK - ball.size / 2;
+          ball.vy = -Math.abs(ball.vy) * 0.8;
+          return 'post';
+        }
+        if (ball.y + ball.size / 2 > gb && ball.y - ball.size / 2 < gb + POST_THICK) {
+          ball.y = gb + POST_THICK + ball.size / 2;
+          ball.vy = Math.abs(ball.vy) * 0.8;
+          return 'post';
+        }
+        if (ball.x + ball.size / 2 > W - 2) {
+          if (ball.y < gt || ball.y > gb) {
+            ball.x = W - ball.size / 2 - 2;
+            ball.vx = -Math.abs(ball.vx) * 0.85;
+            return 'wall';
+          }
+        }
+      }
+
+      return null;
     }
 
     // ─── PHYSICS ───
@@ -302,91 +512,100 @@
         ball.x += ball.vx * subDt;
         ball.y += ball.vy * subDt;
 
-        // Z-axis: gravity pulls lobbed ball back down
+        // Z-axis: gravity
         if (ball.z > 0 || ball.vz > 0) {
           ball.z += ball.vz * subDt;
           ball.vz -= GRAVITY * subDt;
-          if (ball.z <= 0) {
-            ball.z = 0;
-            ball.vz = 0;
-            // Small speed boost on landing (bouncy feel)
-          }
+          if (ball.z <= 0) { ball.z = 0; ball.vz = 0; }
         }
 
-        // Wall bounce
+        // Wall bounce (top/bottom)
         if (ball.y - ball.size / 2 < 0) {
           ball.y = ball.size / 2;
-          ball.vy = Math.abs(ball.vy) * 0.98;
+          ball.vy = Math.abs(ball.vy) * 0.97;
         }
         if (ball.y + ball.size / 2 > H) {
           ball.y = H - ball.size / 2;
-          ball.vy = -Math.abs(ball.vy) * 0.98;
+          ball.vy = -Math.abs(ball.vy) * 0.97;
         }
 
         const airborne = ball.z > AIR_THRESHOLD;
 
-        // Player outfield catches the ball (only on ground)
-        if (!airborne && hitPaddle(ofL, true)) {
-          ballState = 'held_player';
-          holdPaddle = ofL;
-          holdOffsetY = clamp(ball.y - (ofL.y + ofL.h / 2), -ofL.h / 2, ofL.h / 2);
-          holdTimer = 0;
-          ball.vx = 0;
-          ball.vy = 0;
-          ball.z = 0;
-          ball.vz = 0;
-          return;
-        }
-
-        // AI outfield catches the ball (only on ground)
-        if (!airborne && hitPaddle(ofR, false)) {
-          ballState = 'held_ai';
-          holdPaddle = ofR;
-          holdOffsetY = clamp(ball.y - (ofR.y + ofR.h / 2), -ofR.h / 2, ofR.h / 2);
-          holdTimer = 0;
-          aiShootTimer = 0.3 + Math.random() * 0.8;
-          ball.vx = 0;
-          ball.vy = 0;
-          ball.z = 0;
-          ball.vz = 0;
-          return;
-        }
-
-        // GKs — ball bounces off GKs only when on ground
+        // Goal post collisions (even when airborne for side walls)
         if (!airborne) {
-          hitPaddle(gkL, true);
-          hitPaddle(gkR, false);
+          checkGoalPosts();
         }
 
-        // Goals (ball must be near ground to count as goal)
         if (!airborne) {
-          if (ball.x + ball.size / 2 < 0) {
+          // Check player's main forward FIRST (catch priority)
+          const playerFwd = leftTeam.mainFwd;
+          if (playerFwd && hitPaddle(playerFwd)) {
+            ballState = 'held_player';
+            holdPaddle = playerFwd;
+            holdOffsetY = clamp(ball.y - (playerFwd.y + playerFwd.h / 2),
+                                -playerFwd.h / 2, playerFwd.h / 2);
+            holdTimer = 0;
+            ball.vx = 0; ball.vy = 0;
+            ball.z = 0; ball.vz = 0;
+            return;
+          }
+
+          // Check right team's main forward (AI catch)
+          const aiFwd = rightTeam.mainFwd;
+          if (aiFwd && hitPaddle(aiFwd)) {
+            ballState = 'held_ai';
+            holdPaddle = aiFwd;
+            holdOffsetY = clamp(ball.y - (aiFwd.y + aiFwd.h / 2),
+                                -aiFwd.h / 2, aiFwd.h / 2);
+            holdTimer = 0;
+            aiShootTimer = 0.4 + Math.random() * 0.8;
+            ball.vx = 0; ball.vy = 0;
+            ball.z = 0; ball.vz = 0;
+            return;
+          }
+
+          // All other paddles: deflect only
+          for (const p of allPaddles) {
+            if (p === playerFwd || p === aiFwd) continue;  // already checked
+            if (p.isGK) {
+              hitPaddle(p);  // GK deflects
+            } else {
+              hitPaddle(p);  // formation player deflects
+            }
+          }
+        }
+
+        // Goals (only on ground, only through goal mouth)
+        const gt = goalTop();
+        const gb = goalBottom();
+        if (!airborne) {
+          if (ball.x + ball.size / 2 < 0 && ball.y > gt && ball.y < gb) {
             scoreR++;
             resetAfterGoal(true);
             return;
           }
-          if (ball.x - ball.size / 2 > W) {
+          if (ball.x - ball.size / 2 > W && ball.y > gt && ball.y < gb) {
             scoreL++;
             resetAfterGoal(false);
             return;
           }
         }
 
-        // If airborne and past the goal line, bounce it back in (went over the goal)
-        if (airborne) {
-          if (ball.x - ball.size / 2 < 0) {
-            ball.x = ball.size / 2;
+        // Airborne: bounce off edges
+        if (airborne || ball.y <= gt || ball.y >= gb) {
+          if (ball.x - ball.size / 2 < 2) {
+            ball.x = ball.size / 2 + 2;
             ball.vx = Math.abs(ball.vx) * 0.7;
           }
-          if (ball.x + ball.size / 2 > W) {
-            ball.x = W - ball.size / 2;
+          if (ball.x + ball.size / 2 > W - 2) {
+            ball.x = W - ball.size / 2 - 2;
             ball.vx = -Math.abs(ball.vx) * 0.7;
           }
         }
       }
     }
 
-    // ─── HOLD POSITION: ball on front of paddle ───
+    // ─── STICK BALL TO PADDLE ───
     function stickBallToFront(paddle, isLeft) {
       if (isLeft) {
         ball.x = paddle.x + paddle.w + ball.size / 2 + 2;
@@ -399,72 +618,55 @@
 
     // ─── UPDATE ───
     let lastTime = performance.now();
-    initPositions();
-    resetAfterGoal(true);
 
     function update(now) {
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
-      // Recalc sizes
-      gkL.h = H * GK_H_RATIO;
-      gkR.h = H * GK_H_RATIO;
-      ofL.h = H * OF_H_RATIO;
-      ofR.h = H * OF_H_RATIO;
-      gkL.x = 15;
-      gkR.x = W - 15 - PADDLE_W;
-
       const pSpeed = H * OF_SPEED_RATIO;
       const gkSpeed = H * GK_SPEED_RATIO;
 
       // ─── Player controls ───
-      // When ball is on left GK: arrows move the GK up/down ONLY
-      // The instant Space is pressed, control switches to outfield
       const playerControlsGK = (ballState === 'on_gk' && serveFromLeft && goalPause <= 0);
+      const playerPaddle = leftTeam.mainFwd;
+      const gk = leftTeam.gk;
 
       if (playerControlsGK) {
-        if (keys['ArrowUp'])   gkL.y -= gkSpeed * dt;
-        if (keys['ArrowDown']) gkL.y += gkSpeed * dt;
-        gkL.y = clamp(gkL.y, 0, H - gkL.h);
+        if (keys['ArrowUp'])   gk.y -= gkSpeed * dt;
+        if (keys['ArrowDown']) gk.y += gkSpeed * dt;
+        gk.y = clamp(gk.y, 0, H - gk.h);
       } else {
-        if (keys['ArrowUp'])    ofL.y -= pSpeed * dt;
-        if (keys['ArrowDown'])  ofL.y += pSpeed * dt;
-        if (keys['ArrowLeft'])  ofL.x -= pSpeed * dt;
-        if (keys['ArrowRight']) ofL.x += pSpeed * dt;
-        ofL.x = clamp(ofL.x, gkL.x + gkL.w + 10, W / 2 - ofL.w - 10);
-        ofL.y = clamp(ofL.y, 0, H - ofL.h);
+        if (keys['ArrowUp'])    playerPaddle.y -= pSpeed * dt;
+        if (keys['ArrowDown'])  playerPaddle.y += pSpeed * dt;
+        if (keys['ArrowLeft'])  playerPaddle.x -= pSpeed * dt;
+        if (keys['ArrowRight']) playerPaddle.x += pSpeed * dt;
+        playerPaddle.x = clamp(playerPaddle.x, gk.x + gk.w + 10, W * 0.48);
+        playerPaddle.y = clamp(playerPaddle.y, 0, H - playerPaddle.h);
       }
 
-      // Track paddle velocities
-      ofLVelY = (ofL.y - ofLPrevY) / Math.max(dt, 0.001);
-      ofLPrevY = ofL.y;
-      ofRVelY = (ofR.y - ofRPrevY) / Math.max(dt, 0.001);
-      ofRPrevY = ofR.y;
+      // Track player paddle velocity for spin
+      playerVelY = (playerPaddle.y - playerPrevY) / Math.max(dt, 0.001);
+      playerPrevY = playerPaddle.y;
 
-      // AI (skip left GK AI when player controls it)
-      if (!playerControlsGK) gkAI(gkL, GK_SKILL_LEFT, dt);
-      gkAI(gkR, GK_SKILL_RIGHT, dt);
-      ofAI(ofR, dt);
+      // AI
+      if (!playerControlsGK) gkAI(leftTeam, GK_SKILL_LEFT, dt);
+      gkAI(rightTeam, GK_SKILL_RIGHT, dt);
+      leftTeam.players.forEach(p => formationAI(p, dt));
+      rightTeam.players.forEach(p => formationAI(p, dt));
 
       // ─── Ball state machine ───
+      if (goalPause > 0) { goalPause -= dt; return; }
 
-      if (goalPause > 0) {
-        goalPause -= dt;
-        return;
-      }
-
-      // Ball on GK
       if (ballState === 'on_gk') {
-        const gk = serveFromLeft ? gkL : gkR;
-        // Stick ball to front of GK
+        const servingTeam = serveFromLeft ? leftTeam : rightTeam;
+        const sgk = servingTeam.gk;
         if (serveFromLeft) {
-          ball.x = gk.x + gk.w + ball.size / 2 + 2;
+          ball.x = sgk.x + sgk.w + ball.size / 2 + 2;
         } else {
-          ball.x = gk.x - ball.size / 2 - 2;
+          ball.x = sgk.x - ball.size / 2 - 2;
         }
-        ball.y = gk.y + gk.h / 2;
+        ball.y = sgk.y + sgk.h / 2;
 
-        // Player serves on Space RELEASE — hold longer to lob
         if (serveFromLeft) {
           if (spaceDown) spaceHeldTime += dt;
           if (consumeRelease('Space')) {
@@ -472,183 +674,244 @@
             spaceHeldTime = 0;
             return;
           }
-        }
-
-        // AI serves after delay
-        if (!serveFromLeft) {
-          if (aiServeTimer <= 0) aiServeDelay();
+        } else {
+          // AI serve
+          if (aiServeTimer <= 0) aiServeTimer = 0.6 + Math.random() * 0.8;
           aiServeTimer -= dt;
-          if (aiServeTimer <= 0) serveFromGK();
+          if (aiServeTimer <= 0) {
+            serveFromGK(Math.random() * 0.15);  // AI: mostly flat with slight lob
+          }
         }
         return;
       }
 
-      // Ball held by player outfield
       if (ballState === 'held_player' && holdPaddle) {
         stickBallToFront(holdPaddle, true);
         holdTimer += dt;
         if (spaceDown) spaceHeldTime += dt;
 
-        // Shoot on Space RELEASE or auto-release at time limit
         if (consumeRelease('Space')) {
           shootFromPaddle(holdPaddle, true, spaceHeldTime);
           spaceHeldTime = 0;
         } else if (holdTimer >= HOLD_TIME_LIMIT) {
-          shootFromPaddle(holdPaddle, true, 0);  // auto-release = quick shot
+          shootFromPaddle(holdPaddle, true, 0);
         }
         return;
       }
 
-      // Ball held by AI outfield
       if (ballState === 'held_ai' && holdPaddle) {
         stickBallToFront(holdPaddle, false);
         holdTimer += dt;
-
-        // AI shoots on its timer or auto-release at limit
         if (holdTimer >= HOLD_TIME_LIMIT) {
-          shootFromPaddle(holdPaddle, false);
+          shootFromPaddle(holdPaddle, false, 0);
         }
-        // (aiShootTimer handled in ofAI)
         return;
       }
 
-      // Ball is live
       physicsStep(dt);
     }
 
     // ─── DRAW FIELD ───
     function drawField() {
-      ctx.strokeStyle = '#1a3d1a';
-      ctx.lineWidth = 2;
+      // Pitch background (very dark green)
+      ctx.fillStyle = '#0a1f0a';
+      ctx.fillRect(0, 0, W, H);
 
-      ctx.setLineDash([10, 10]);
+      ctx.strokeStyle = '#1a4d1a';
+      ctx.lineWidth = 1.5;
+
+      // Center line
+      ctx.setLineDash([8, 8]);
       ctx.beginPath();
       ctx.moveTo(W / 2, 0);
       ctx.lineTo(W / 2, H);
       ctx.stroke();
       ctx.setLineDash([]);
 
+      // Center circle
       ctx.beginPath();
-      ctx.arc(W / 2, H / 2, H * 0.12, 0, Math.PI * 2);
+      ctx.arc(W / 2, H / 2, H * 0.10, 0, Math.PI * 2);
       ctx.stroke();
-
-      ctx.fillStyle = '#1a3d1a';
+      ctx.fillStyle = '#1a4d1a';
       ctx.beginPath();
       ctx.arc(W / 2, H / 2, 3, 0, Math.PI * 2);
       ctx.fill();
 
+      // Penalty areas
       const penW = W * 0.10;
-      const penH = H * 0.40;
+      const penH = H * 0.45;
       ctx.strokeRect(0, H / 2 - penH / 2, penW, penH);
       ctx.strokeRect(W - penW, H / 2 - penH / 2, penW, penH);
 
+      // Goal area
       const gaW = penW * 0.4;
       const gaH = penH * 0.5;
       ctx.strokeRect(0, H / 2 - gaH / 2, gaW, gaH);
       ctx.strokeRect(W - gaW, H / 2 - gaH / 2, gaW, gaH);
 
+      // Field border
       ctx.strokeRect(1, 1, W - 2, H - 2);
+
+      // ─── GOAL POSTS ───
+      const gt = goalTop();
+      const gb = goalBottom();
+
+      ctx.fillStyle = '#fff';
+      // Left goal posts (white thick bars)
+      ctx.fillRect(0, gt - POST_THICK, GOAL_DEPTH, POST_THICK);       // top crossbar
+      ctx.fillRect(0, gb, GOAL_DEPTH, POST_THICK);                     // bottom crossbar
+      ctx.fillRect(0, gt - POST_THICK, 3, gb - gt + POST_THICK * 2);   // back line
+
+      // Right goal posts
+      ctx.fillRect(W - GOAL_DEPTH, gt - POST_THICK, GOAL_DEPTH, POST_THICK);
+      ctx.fillRect(W - GOAL_DEPTH, gb, GOAL_DEPTH, POST_THICK);
+      ctx.fillRect(W - 3, gt - POST_THICK, 3, gb - gt + POST_THICK * 2);
+
+      // Goal net (subtle)
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 0.5;
+      for (let y = gt; y < gb; y += 12) {
+        ctx.beginPath();
+        ctx.moveTo(0, y); ctx.lineTo(GOAL_DEPTH - 2, y); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(W, y); ctx.lineTo(W - GOAL_DEPTH + 2, y); ctx.stroke();
+      }
+      for (let x = 3; x < GOAL_DEPTH; x += 12) {
+        ctx.beginPath();
+        ctx.moveTo(x, gt); ctx.lineTo(x, gb); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(W - x, gt); ctx.lineTo(W - x, gb); ctx.stroke();
+      }
+    }
+
+    // ─── DRAW PADDLES ───
+    function drawPaddle(p) {
+      // Glow for player-controlled paddle
+      if (p.isPlayer) {
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+      }
+
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+
+      // Number label (tiny, above paddle)
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = '8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(p.num, p.x + p.w / 2, p.y - 3);
     }
 
     // ─── RENDER ───
     function render() {
-      ctx.clearRect(0, 0, W, H);
-
       drawField();
 
-      // Paddles
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(gkL.x, gkL.y, gkL.w, gkL.h);
-      ctx.fillRect(gkR.x, gkR.y, gkR.w, gkR.h);
-      ctx.fillRect(ofL.x, ofL.y, ofL.w, ofL.h);
-      ctx.fillRect(ofR.x, ofR.y, ofR.w, ofR.h);
+      // Draw all paddles
+      allPaddles.forEach(drawPaddle);
 
-      // Ball (with 3D height effect)
+      // Ball (with 3D height)
       if (goalPause <= 0) {
-        const zPx = ball.z;                         // pixels of "height"
-        const zScale = 1 + zPx / 300;               // ball grows slightly when high
+        const zPx = ball.z;
+        const zScale = 1 + zPx / 300;
         const drawSize = ball.size * zScale;
-        const shadowAlpha = Math.max(0.08, 0.3 - zPx / 400);
-        const shadowSpread = 1 + zPx / 60;          // shadow gets bigger/softer
+        const shadowAlpha = Math.max(0.06, 0.25 - zPx / 500);
+        const shadowSpread = 1 + zPx / 50;
 
-        // Shadow on the ground
+        // Shadow
         if (zPx > 2) {
           ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
           const sw = ball.size * shadowSpread;
-          const sh = ball.size * shadowSpread * 0.5;  // flatter oval shadow
+          const sh = ball.size * shadowSpread * 0.4;
           ctx.beginPath();
-          ctx.ellipse(ball.x, ball.y + zPx * 0.15, sw / 2, sh / 2, 0, 0, Math.PI * 2);
+          ctx.ellipse(ball.x, ball.y + zPx * 0.12, sw / 2, sh / 2, 0, 0, Math.PI * 2);
           ctx.fill();
         }
 
-        // Ball itself (drawn "up" by z pixels)
+        // Ball
         ctx.fillStyle = '#fff';
-        ctx.fillRect(
-          ball.x - drawSize / 2,
-          ball.y - drawSize / 2 - zPx,
-          drawSize, drawSize
-        );
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y - zPx, drawSize / 2, 0, Math.PI * 2);
+        ctx.fill();
       }
 
-      // Hold timer bar (shows when player is holding)
+      // Hold timer bar
       if (ballState === 'held_player' && holdPaddle) {
-        const barW = 40;
-        const barH = 3;
-        const bx = holdPaddle.x + holdPaddle.w + 8;
+        const barW = 36; const barH = 3;
+        const bx = holdPaddle.x + holdPaddle.w + 6;
         const by = holdPaddle.y - 8;
         const pct = 1 - (holdTimer / HOLD_TIME_LIMIT);
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
         ctx.fillRect(bx, by, barW, barH);
         ctx.fillStyle = pct > 0.3 ? '#fff' : '#f44';
         ctx.fillRect(bx, by, barW * pct, barH);
       }
 
-      // Charge indicator (when holding Space)
+      // Charge indicator
       if (spaceDown && (ballState === 'on_gk' && serveFromLeft || ballState === 'held_player')) {
-        const charge = clamp(spaceHeldTime / 0.5, 0, 1);
-        const barW = 30;
-        const barH = 3;
-        // Show near the ball
-        const bx = ball.x + ball.size;
+        const maxCharge = 1.5;  // visual max at 1.5s
+        const charge = clamp(spaceHeldTime / maxCharge, 0, 1);
+        const barW = 30; const barH = 3;
+        const bx = ball.x + ball.size + 4;
         const by = ball.y - 10 - ball.z;
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
         ctx.fillRect(bx, by, barW, barH);
-        // Green for tap, yellow for lob
         const r = Math.round(255 * charge);
-        const g = Math.round(255 * (1 - charge * 0.3));
-        ctx.fillStyle = `rgb(${r},${g},100)`;
+        const g = Math.round(255 * (1 - charge * 0.4));
+        ctx.fillStyle = `rgb(${r},${g},80)`;
         ctx.fillRect(bx, by, barW * charge, barH);
       }
 
       // Prompts
+      ctx.textAlign = 'center';
       if (ballState === 'on_gk' && serveFromLeft && goalPause <= 0) {
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.font = '11px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(spaceDown ? 'release to lob...' : 'tap SPACE = pass  |  hold = lob', W / 2, 22);
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '10px monospace';
+        ctx.fillText(spaceDown ? 'release...' : 'SPACE: tap = flat  |  hold = lob', W / 2, 20);
       }
       if (ballState === 'held_player') {
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.font = '11px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(spaceDown ? 'release to lob...' : 'tap SPACE = shoot  |  hold = lob', W / 2, 22);
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '10px monospace';
+        ctx.fillText(spaceDown ? 'release...' : 'SPACE: tap = shoot  |  hold = lob', W / 2, 20);
       }
 
-      // Score
+      // ─── SCOREBOARD ───
+      // Team names and score
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = TEAM_LEFT.primary;
+      ctx.textAlign = 'right';
+      ctx.fillText(TEAM_LEFT.short, W / 2 - 45, 48);
+      ctx.fillStyle = TEAM_RIGHT.primary;
+      ctx.textAlign = 'left';
+      ctx.fillText(TEAM_RIGHT.short, W / 2 + 45, 48);
+
       ctx.fillStyle = '#fff';
-      ctx.font = '32px monospace';
+      ctx.font = 'bold 28px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(scoreL, W / 2 - 60, 50);
-      ctx.fillText(scoreR, W / 2 + 60, 50);
+      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, 50);
+
+      // Player name indicator
+      const mp = leftTeam.mainFwd;
+      if (mp && ballState !== 'on_gk') {
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+        const label = mp.captain ? `${mp.name} (C) #${mp.num}` : `${mp.name} #${mp.num}`;
+        ctx.fillText(label, mp.x + mp.w / 2, mp.y + mp.h + 12);
+      }
 
       // Controls hint
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.font = '11px monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.font = '9px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('Arrows = move  |  Space = serve / shoot', W / 2, H - 10);
+      ctx.fillText('Arrows = move  |  Space = pass / shoot (hold for lob)', W / 2, H - 8);
     }
 
     // ─── LOOP ───
+    init();
+
     function loop(now) {
       update(now);
       render();
