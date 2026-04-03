@@ -37,15 +37,15 @@
     // --- GAME CONSTANTS ---
     const PADDLE_W = 10;
     const OF_H_RATIO = 0.08;          // outfield paddle: 8% of screen height
-    const GK_H_RATIO = 0.04;          // goalkeeper: half the outfield = 4%
+    const GK_H_RATIO = 0.04;          // goalkeeper: HALF of outfield
     const BALL_SIZE = 8;
-    const OF_SPEED_RATIO = 0.50;       // outfield moves at 50% of screen height/sec
-    const BALL_START_SPEED = 0.18;     // slow start — fraction of screen width/sec
+    const OF_SPEED_RATIO = 0.50;
+    const BALL_START_SPEED = 0.18;
     const BALL_MAX_SPEED = 0.50;
-    const BALL_ACCEL = 1.025;          // gentle speed increase per hit
+    const BALL_ACCEL = 1.025;
     const MAX_BOUNCE_ANGLE = Math.PI / 3.5;
 
-    // Goalkeeper AI skill (0 to 1) — higher = better tracking
+    // Goalkeeper AI skill (0 to 1)
     const GK_SKILL_LEFT = 0.75;
     const GK_SKILL_RIGHT = 0.65;
 
@@ -64,11 +64,8 @@
       const gkH = H * GK_H_RATIO;
       const ofH = H * OF_H_RATIO;
 
-      // GKs sit right on the goal line
       gkL = { x: 15, y: H / 2 - gkH / 2, w: PADDLE_W, h: gkH };
       gkR = { x: W - 15 - PADDLE_W, y: H / 2 - gkH / 2, w: PADDLE_W, h: gkH };
-
-      // Outfield players start in midfield area
       ofL = { x: W * 0.30, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
       ofR = { x: W * 0.70 - PADDLE_W, y: H / 2 - ofH / 2, w: PADDLE_W, h: ofH };
 
@@ -99,32 +96,25 @@
     function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
     // --- GOALKEEPER AI ---
-    // GK only moves vertically on its line. Skill affects reaction speed + jitter.
     function gkAI(gk, skill, dt) {
-      const maxSpeed = H * 0.45 * skill;   // better skill = faster tracking
+      const maxSpeed = H * 0.45 * skill;
       const center = gk.y + gk.h / 2;
       const target = ball.y;
-
-      // Add some "reaction lag" — GK doesn't perfectly track
-      const lag = 1.0 - skill * 0.6;       // lower skill = more lag
+      const lag = 1.0 - skill * 0.6;
       const effective = center + (target - center) * (1 - lag);
-
       const diff = effective - center;
       const move = Math.sign(diff) * Math.min(Math.abs(diff), maxSpeed * dt);
       gk.y = clamp(gk.y + move, 0, H - gk.h);
     }
 
-    // --- OUTFIELD AI (for right side opponent) ---
+    // --- OUTFIELD AI (right side opponent) ---
     function ofAI(of, dt) {
-      const speed = H * OF_SPEED_RATIO * 0.8;
-
-      // Track ball Y
+      const speed = H * OF_SPEED_RATIO * 0.75;
       const cy = of.y + of.h / 2;
       const diffY = ball.y - cy;
       of.y += Math.sign(diffY) * Math.min(Math.abs(diffY), speed * dt);
       of.y = clamp(of.y, 0, H - of.h);
 
-      // Track ball X — try to stay between ball and goal, but on own half
       const idealX = clamp(ball.x + 60, W / 2 + 10, gkR.x - of.w - 30);
       const diffX = idealX - of.x;
       of.x += Math.sign(diffX) * Math.min(Math.abs(diffX), speed * 0.6 * dt);
@@ -138,7 +128,7 @@
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
-      // Recalc paddle sizes on resize
+      // Recalc sizes
       gkL.h = H * GK_H_RATIO;
       gkR.h = H * GK_H_RATIO;
       ofL.h = H * OF_H_RATIO;
@@ -148,7 +138,7 @@
 
       const pSpeed = H * OF_SPEED_RATIO;
 
-      // --- Player 1 controls left outfield (Arrow keys) ---
+      // --- Player controls left outfield (Arrow keys) — 1P ONLY ---
       if (keys['ArrowUp'])    ofL.y -= pSpeed * dt;
       if (keys['ArrowDown'])  ofL.y += pSpeed * dt;
       if (keys['ArrowLeft'])  ofL.x -= pSpeed * dt;
@@ -156,23 +146,22 @@
       ofL.x = clamp(ofL.x, gkL.x + gkL.w + 10, W / 2 - ofL.w - 10);
       ofL.y = clamp(ofL.y, 0, H - ofL.h);
 
-      // --- AI controls everything else ---
+      // --- AI controls both GKs and right outfield ---
       gkAI(gkL, GK_SKILL_LEFT, dt);
       gkAI(gkR, GK_SKILL_RIGHT, dt);
       ofAI(ofR, dt);
 
-      // --- Serve ---
+      // Serve
       if (serving) {
         serveTimer -= dt;
         if (serveTimer <= 0) serveBall();
         return;
       }
 
-      // --- Ball physics ---
+      // Ball physics
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
 
-      // Top/bottom bounce
       if (ball.y - ball.size / 2 < 0) {
         ball.y = ball.size / 2;
         ball.vy = Math.abs(ball.vy);
@@ -182,21 +171,13 @@
         ball.vy = -Math.abs(ball.vy);
       }
 
-      // Paddle collisions
       hitPaddle(gkL, true);
       hitPaddle(gkR, false);
       hitPaddle(ofL, true);
       hitPaddle(ofR, false);
 
-      // Goals
-      if (ball.x < 0) {
-        scoreR++;
-        resetBall(-1);
-      }
-      if (ball.x > W) {
-        scoreL++;
-        resetBall(1);
-      }
+      if (ball.x < 0) { scoreR++; resetBall(-1); }
+      if (ball.x > W) { scoreL++; resetBall(1); }
     }
 
     function hitPaddle(p, isLeft) {
@@ -223,13 +204,11 @@
       }
     }
 
-    // --- RENDER ---
-    function render() {
-      ctx.clearRect(0, 0, W, H);
-
-      // Center dashed line
+    // --- DRAW SOCCER FIELD LINES ---
+    function drawField() {
+      // Center line (dashed)
       ctx.setLineDash([10, 10]);
-      ctx.strokeStyle = '#222';
+      ctx.strokeStyle = '#1a3d1a';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(W / 2, 0);
@@ -237,7 +216,49 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Paddles — all white
+      // Center circle
+      ctx.strokeStyle = '#1a3d1a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, H * 0.12, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Center dot
+      ctx.fillStyle = '#1a3d1a';
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Penalty areas (left)
+      const penW = W * 0.10;
+      const penH = H * 0.40;
+      ctx.strokeStyle = '#1a3d1a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0, H / 2 - penH / 2, penW, penH);
+
+      // Penalty area (right)
+      ctx.strokeRect(W - penW, H / 2 - penH / 2, penW, penH);
+
+      // Goal areas (smaller box inside penalty area)
+      const gaW = penW * 0.4;
+      const gaH = penH * 0.5;
+      ctx.strokeRect(0, H / 2 - gaH / 2, gaW, gaH);
+      ctx.strokeRect(W - gaW, H / 2 - gaH / 2, gaW, gaH);
+
+      // Field border
+      ctx.strokeStyle = '#1a3d1a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, W - 2, H - 2);
+    }
+
+    // --- RENDER ---
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+
+      // Field markings (subtle dark green on black)
+      drawField();
+
+      // Paddles — plain white, no indicators
       ctx.fillStyle = '#fff';
       ctx.fillRect(gkL.x, gkL.y, gkL.w, gkL.h);
       ctx.fillRect(gkR.x, gkR.y, gkR.w, gkR.h);
@@ -262,7 +283,7 @@
       ctx.fillText(scoreR, W / 2 + 60, 44);
 
       // Controls hint
-      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
       ctx.font = '11px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('Arrow keys to move', W / 2, H - 10);
