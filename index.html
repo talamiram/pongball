@@ -103,8 +103,8 @@
     const MAX_BOUNCE_ANGLE = Math.PI / 3;
     const HOLD_TIME_LIMIT = 2.0;
 
-    const GRAVITY = 900;
-    const LOB_POWER = 0.9;
+    const GRAVITY = 500;                // was 900 — lower so lobs travel further
+    const LOB_POWER = 1.2;              // was 0.9 — stronger lobs reach the far wall
     const AIR_THRESHOLD = 10;
 
     const GOAL_HEIGHT_RATIO = 0.30;
@@ -566,21 +566,22 @@
 
         const gt = goalTop();
         const gb = goalBottom();
-        if (!airborne) {
-          if (ball.x + ball.size / 2 < 0 && ball.y > gt && ball.y < gb) {
-            scoreR++;
-            resetAfterGoal(true);
-            return;
-          }
-          if (ball.x - ball.size / 2 > W && ball.y > gt && ball.y < gb) {
-            scoreL++;
-            lastShotMaxZ = currentMaxZ;
-            resetAfterGoal(false);
-            return;
-          }
+
+        // Goals — lobs CAN score (airborne or not)
+        if (ball.x + ball.size / 2 < 0 && ball.y > gt && ball.y < gb) {
+          scoreR++;
+          resetAfterGoal(true);
+          return;
+        }
+        if (ball.x - ball.size / 2 > W && ball.y > gt && ball.y < gb) {
+          scoreL++;
+          lastShotMaxZ = currentMaxZ;
+          resetAfterGoal(false);
+          return;
         }
 
-        if (airborne || ball.y <= gt || ball.y >= gb) {
+        // Wall bounce outside goal mouth (and airborne over goal)
+        if (ball.y <= gt || ball.y >= gb || airborne) {
           if (ball.x - ball.size / 2 < 2) {
             ball.x = ball.size / 2 + 2;
             ball.vx = Math.abs(ball.vx) * 0.7;
