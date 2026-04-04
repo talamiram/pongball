@@ -249,7 +249,7 @@
     let menuSelection = 0;  // 0 = match, 1 = match3d, 2 = physics, 3 = worldcup
 
     // ─── TEAMS: ITALIA 90 ───
-    // Player = Italy (left), AI = Brazil (right)
+    // Player = Italy (left), AI = W.Germany (right)
     // Stats: speed (movement multiplier), reaction (ball tracking), size (paddle height multiplier)
     const TEAM_LEFT = {
       name: 'Italy', short: 'ITA',
@@ -275,25 +275,25 @@
     };
 
     const TEAM_RIGHT = {
-      name: 'Brazil', short: 'BRA',
-      primary: '#FFDF00', secondary: '#009739',
-      kit: { head: '#8B6914', jersey: '#FFDF00', shorts: '#003DA5', boots: '#fff' },
-      gk:  { num: 1,  name: 'Taffarel',     stats: { speed: 0.7, reaction: 0.72, size: 1.0 } },
+      name: 'W.Germany', short: 'GER',
+      primary: '#fff', secondary: '#000',
+      kit: { head: '#fff', jersey: '#fff', shorts: '#000', boots: '#000' },
+      gk:  { num: 1,  name: 'Illgner',       stats: { speed: 0.7, reaction: 0.75, size: 1.05 } },
       def: [
-        { num: 2,  name: 'Jorginho',        stats: { speed: 0.75, reaction: 0.70, size: 1.0 } },
-        { num: 4,  name: 'Dunga', captain: true, stats: { speed: 0.65, reaction: 0.80, size: 1.1 } },
-        { num: 3,  name: 'Ricardo Gomes',   stats: { speed: 0.60, reaction: 0.80, size: 1.05 } },
-        { num: 6,  name: 'Branco',          stats: { speed: 0.70, reaction: 0.70, size: 1.0 } }
+        { num: 2,  name: 'Reuter',          stats: { speed: 0.80, reaction: 0.70, size: 1.0 } },
+        { num: 4,  name: 'Kohler',          stats: { speed: 0.65, reaction: 0.85, size: 1.15 } },
+        { num: 5,  name: 'Augenthaler',     stats: { speed: 0.55, reaction: 0.80, size: 1.1 } },
+        { num: 3,  name: 'Brehme',          stats: { speed: 0.85, reaction: 0.80, size: 1.0 } }
       ],
       mid: [
-        { num: 5,  name: 'Alemão',          stats: { speed: 0.75, reaction: 0.75, size: 1.0 } },
-        { num: 8,  name: 'Valdo',           stats: { speed: 0.80, reaction: 0.80, size: 0.95 } },
-        { num: 15, name: 'Mazinho',         stats: { speed: 0.75, reaction: 0.70, size: 1.0 } },
-        { num: 17, name: 'Silas',           stats: { speed: 0.85, reaction: 0.75, size: 0.95 } }
+        { num: 6,  name: 'Buchwald',        stats: { speed: 0.70, reaction: 0.80, size: 1.05 } },
+        { num: 10, name: 'Matthäus', captain: true, stats: { speed: 0.90, reaction: 0.90, size: 1.0 } },
+        { num: 8,  name: 'Häßler',          stats: { speed: 0.85, reaction: 0.85, size: 0.9 } },
+        { num: 7,  name: 'Littbarski',      stats: { speed: 0.85, reaction: 0.75, size: 0.9 } }
       ],
       fwd: [
-        { num: 11, name: 'Romário',         stats: { speed: 0.95, reaction: 0.90, size: 0.9 } },
-        { num: 9,  name: 'Careca',          stats: { speed: 0.90, reaction: 0.85, size: 0.95 } }
+        { num: 18, name: 'Klinsmann',       stats: { speed: 0.90, reaction: 0.85, size: 0.95 } },
+        { num: 9,  name: 'Völler',          stats: { speed: 0.85, reaction: 0.85, size: 0.95 } }
       ]
     };
 
@@ -374,10 +374,13 @@
     // Cutscene state
     let cutsceneActive = false;
     let cutsceneStartTime = 0;
-    const CUTSCENE_DURATION = 2.5;  // total seconds
-    const CUTSCENE_ZOOM_END = 1.8;  // zoom finishes at this time
-    const CUTSCENE_TEXT_START = 0.8; // team names appear
-    const CUTSCENE_TEXT_END = 2.2;   // team names fade out
+    const CUTSCENE_DURATION = 6.0;   // total seconds
+    const CUTSCENE_LOGO_END = 2.2;   // logo phase ends
+    const CUTSCENE_TABLE_START = 1.8; // table fades in (overlaps logo end)
+    const CUTSCENE_ZOOM_START = 3.0;  // zoom into gameplay begins
+    const CUTSCENE_ZOOM_END = 5.0;    // zoom finishes
+    const CUTSCENE_TEXT_START = 4.0;   // team names appear
+    const CUTSCENE_TEXT_END = 5.8;     // team names fade out
 
     window.addEventListener('keydown', e => {
       keys[e.code] = true;
@@ -1499,34 +1502,371 @@
       // Auto-end cutscene
       if (t >= CUTSCENE_DURATION) {
         cutsceneActive = false;
-        lastTime = now;  // reset so first update frame doesn't get huge dt
+        lastTime = now;
         return;
       }
 
-      // Zoom: starts at 0.65, eases to 1.0
-      const zoomT = Math.min(t / CUTSCENE_ZOOM_END, 1);
-      const eased = 1 - Math.pow(1 - zoomT, 3);  // ease-out cubic
-      const scale = 0.65 + eased * 0.35;
-
-      // Draw field + paddles at zoomed scale
-      ctx.save();
-      ctx.fillStyle = '#080808';
+      ctx.fillStyle = '#050505';
       ctx.fillRect(0, 0, W, H);
 
-      // Translate so the zoom centers on the middle of the field
-      const cx = W / 2, cy = H / 2;
-      ctx.translate(cx * (1 - scale), cy * (1 - scale));
-      ctx.scale(scale, scale);
+      // ═══════════════════════════════════════
+      // PHASE 0: LOGO ANIMATION (0 → LOGO_END)
+      // ═══════════════════════════════════════
+      if (t < CUTSCENE_LOGO_END + 0.5) {
+        const logoAlpha = t < CUTSCENE_LOGO_END
+          ? Math.min(t * 2, 1)
+          : Math.max(0, 1 - (t - CUTSCENE_LOGO_END) / 0.5);
 
-      drawField();
-      allPaddles.forEach(drawPaddle);
+        ctx.save();
+        ctx.globalAlpha = logoAlpha;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // "PONGBALL" — letters appear with neon flicker
+        const letters = 'PONGBALL';
+        const fontSize = Math.max(48, W * 0.07);
+        ctx.font = `bold ${fontSize}px monospace`;
+        const totalW = ctx.measureText(letters).width;
+        const startX = W / 2 - totalW / 2;
+
+        for (let i = 0; i < letters.length; i++) {
+          const letterDelay = i * 0.12;  // stagger each letter
+          const letterT = Math.max(0, t - letterDelay);
+
+          if (letterT <= 0) continue;
+
+          // Neon flicker on appearance (rapid on/off for first 0.3s)
+          let flicker = 1;
+          if (letterT < 0.3) {
+            flicker = Math.sin(letterT * 40) > -0.2 ? 1 : 0.1;
+          }
+
+          const charW = ctx.measureText(letters[i]).width;
+          const cx = startX + ctx.measureText(letters.substring(0, i)).width + charW / 2;
+          const cy = H * 0.42;
+
+          // Glow
+          ctx.save();
+          ctx.globalAlpha = logoAlpha * flicker;
+          ctx.shadowColor = '#88ddff';
+          ctx.shadowBlur = 30 * flicker;
+          ctx.fillStyle = '#fff';
+          ctx.fillText(letters[i], cx, cy);
+          // Second glow pass
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 15 * flicker;
+          ctx.fillText(letters[i], cx, cy);
+          ctx.restore();
+        }
+
+        // "ITALIA '90" appears after all letters
+        const subDelay = letters.length * 0.12 + 0.3;
+        if (t > subDelay) {
+          const subT = t - subDelay;
+          const subAlpha = Math.min(subT * 3, 1) * logoAlpha;
+          ctx.save();
+          ctx.globalAlpha = subAlpha;
+          ctx.font = `bold ${Math.max(14, W * 0.018)}px monospace`;
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = '#ccc';
+          ctx.fillText("ITALIA '90", W / 2, H * 0.42 + fontSize * 0.7);
+
+          // Italian flag stripe
+          const flagW = W * 0.06;
+          const flagH = Math.max(2, fontSize * 0.05);
+          const fx = W / 2 - flagW / 2;
+          const fy = H * 0.42 + fontSize * 0.7 + fontSize * 0.25;
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#009246'; ctx.fillRect(fx, fy, flagW / 3, flagH);
+          ctx.fillStyle = '#fff';    ctx.fillRect(fx + flagW / 3, fy, flagW / 3, flagH);
+          ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx + flagW * 2 / 3, fy, flagW / 3, flagH);
+          ctx.restore();
+        }
+
+        // Decorative line under logo
+        if (t > 0.5) {
+          const lineT = Math.min((t - 0.5) / 0.8, 1);
+          const lineW = W * 0.25 * lineT;
+          ctx.save();
+          ctx.globalAlpha = logoAlpha * 0.4;
+          ctx.strokeStyle = '#88ddff';
+          ctx.shadowColor = '#88ddff';
+          ctx.shadowBlur = 6;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(W / 2 - lineW, H * 0.42 - fontSize * 0.55);
+          ctx.lineTo(W / 2 + lineW, H * 0.42 - fontSize * 0.55);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
+      // ═══════════════════════════════════════
+      // PHASE 1+2: TABLE VIEW → ZOOM INTO GAMEPLAY
+      // ═══════════════════════════════════════
+      if (t < CUTSCENE_TABLE_START) {
+        // Skip hint and return — only logo is showing
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('SPACE to skip', W / 2, H - 15);
+        ctx.restore();
+        return;
+      }
+
+      // Table fade in
+      const tableReveal = Math.min((t - CUTSCENE_TABLE_START) / 0.8, 1);
+
+      // Zoom progress (starts at ZOOM_START, ends at ZOOM_END)
+      const zoomRaw = t < CUTSCENE_ZOOM_START ? 0
+        : Math.min((t - CUTSCENE_ZOOM_START) / (CUTSCENE_ZOOM_END - CUTSCENE_ZOOM_START), 1);
+      const eased = zoomRaw < 0.5
+        ? 4 * zoomRaw * zoomRaw * zoomRaw
+        : 1 - Math.pow(-2 * zoomRaw + 2, 3) / 2;
+
+      // ── Interpolated perspective parameters ──
+      // Start: wide view showing full table (smaller surface, more table body)
+      // End: normal 3D gameplay view
+      const startScale = 0.52;     // surface takes up less screen
+      const endScale = 1.0;
+      const viewScale = startScale + eased * (endScale - startScale);
+
+      // Surface Y position — starts higher (showing table body below)
+      const startSurfaceY = 0.35;  // surface top at 35% of screen
+      const endSurfaceY = 0.0;     // normal (surface fills from top)
+      const surfaceOffsetY = startSurfaceY + eased * (endSurfaceY - startSurfaceY);
+
+      // Table body visibility — starts visible, fades as we zoom in
+      const tableBodyAlpha = Math.max(0, 1 - eased * 1.5);
+
+      // Extra perspective tilt at start (more angled view)
+      const startTilt = 0.08;
+      const endTilt = 0.0;
+      const extraTilt = startTilt + eased * (endTilt - startTilt);
+
+      // ── Draw table body (visible in early phase) ──
+      if (tableBodyAlpha > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = tableBodyAlpha * tableReveal;
+
+        // Table body dimensions relative to the surface
+        const surfW = W * viewScale * 0.92;
+        const surfL = (W - surfW) / 2;
+        const surfR = surfL + surfW;
+        const surfTop = H * (surfaceOffsetY + 0.10);
+        const surfBot = H * (surfaceOffsetY + 0.10 + viewScale * 0.66);
+
+        const bodyTop = surfBot;
+        const bodyH = H * 0.22 * (1 - eased * 0.5);
+        const bodyL = surfL - 10;
+        const bodyR = surfR + 10;
+
+        // Main body rectangle
+        ctx.fillStyle = '#111';
+        ctx.fillRect(bodyL, bodyTop, bodyR - bodyL, bodyH);
+
+        // Table legs (two arches)
+        ctx.fillStyle = '#0a0a0a';
+        const legW = (bodyR - bodyL) * 0.22;
+        const legH = bodyH * 0.6;
+        // Left leg
+        ctx.beginPath();
+        ctx.moveTo(bodyL + legW * 0.3, bodyTop + bodyH);
+        ctx.lineTo(bodyL + legW * 0.3, bodyTop + bodyH - legH);
+        ctx.quadraticCurveTo(bodyL + legW * 1.2, bodyTop + bodyH - legH - 8, bodyL + legW * 2, bodyTop + bodyH - legH);
+        ctx.lineTo(bodyL + legW * 2, bodyTop + bodyH);
+        ctx.closePath();
+        ctx.fill();
+        // Right leg
+        ctx.beginPath();
+        ctx.moveTo(bodyR - legW * 0.3, bodyTop + bodyH);
+        ctx.lineTo(bodyR - legW * 0.3, bodyTop + bodyH - legH);
+        ctx.quadraticCurveTo(bodyR - legW * 1.2, bodyTop + bodyH - legH - 8, bodyR - legW * 2, bodyTop + bodyH - legH);
+        ctx.lineTo(bodyR - legW * 2, bodyTop + bodyH);
+        ctx.closePath();
+        ctx.fill();
+
+        // ── PONGBALL branding (reference style) ──
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Main "PONGBALL" text
+        const brandSize = Math.max(20, surfW * 0.06);
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${brandSize}px monospace`;
+        ctx.fillText('PONGBALL', W / 2, bodyTop + bodyH * 0.28);
+
+        // "ITALIA '90"
+        const subSize = Math.max(10, surfW * 0.022);
+        ctx.font = `bold ${subSize}px monospace`;
+        ctx.fillStyle = '#ccc';
+        ctx.fillText("ITALIA '90", W / 2, bodyTop + bodyH * 0.48);
+
+        // Italian flag stripe
+        const flagW = surfW * 0.08;
+        const flagH = Math.max(2, brandSize * 0.08);
+        const fx = W / 2 - flagW / 2;
+        const fy = bodyTop + bodyH * 0.58;
+        ctx.fillStyle = '#009246'; ctx.fillRect(fx, fy, flagW / 3, flagH);
+        ctx.fillStyle = '#fff';    ctx.fillRect(fx + flagW / 3, fy, flagW / 3, flagH);
+        ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx + flagW * 2 / 3, fy, flagW / 3, flagH);
+
+        // Art deco corner stripes
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = Math.max(2, brandSize * 0.08);
+        // Left
+        ctx.beginPath();
+        ctx.moveTo(bodyL + 12, bodyTop + 6);
+        ctx.lineTo(bodyL + 12, bodyTop + bodyH * 0.7);
+        ctx.lineTo(bodyL + 40, bodyTop + bodyH * 0.7);
+        ctx.stroke();
+        // Inner left
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = Math.max(1, brandSize * 0.04);
+        ctx.beginPath();
+        ctx.moveTo(bodyL + 22, bodyTop + 6);
+        ctx.lineTo(bodyL + 22, bodyTop + bodyH * 0.6);
+        ctx.lineTo(bodyL + 44, bodyTop + bodyH * 0.6);
+        ctx.stroke();
+        // Right
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = Math.max(2, brandSize * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(bodyR - 12, bodyTop + 6);
+        ctx.lineTo(bodyR - 12, bodyTop + bodyH * 0.7);
+        ctx.lineTo(bodyR - 40, bodyTop + bodyH * 0.7);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = Math.max(1, brandSize * 0.04);
+        ctx.beginPath();
+        ctx.moveTo(bodyR - 22, bodyTop + 6);
+        ctx.lineTo(bodyR - 22, bodyTop + bodyH * 0.6);
+        ctx.lineTo(bodyR - 44, bodyTop + bodyH * 0.6);
+        ctx.stroke();
+
+        // ── Glass edge highlight (top of table body) ──
+        ctx.strokeStyle = `rgba(255,255,255,${0.15 * tableBodyAlpha})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(bodyL, bodyTop);
+        ctx.lineTo(bodyR, bodyTop);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      // ── Draw the playing surface (scaled + offset) ──
+      ctx.save();
+      ctx.globalAlpha = tableReveal;
+
+      // Apply zoom transform centered on the surface
+      const cx = W / 2;
+      const cy = H * 0.5 + H * surfaceOffsetY * 0.5;
+      ctx.translate(cx * (1 - viewScale), cy * (1 - viewScale) + H * surfaceOffsetY * viewScale * 0.4);
+      ctx.scale(viewScale, viewScale);
+
+      // Render the 3D field (reuse render3D internals)
+      // We need a custom project function that adds extra tilt
+      const savedProject = window._cutsceneTilt;
+      window._cutsceneTilt = extraTilt;
+
+      // Draw the surface, border, field lines, goals, nets, paddles
+      // Using the actual render3D but within our transform
+      const tl = project3D(0, 0, 0);
+      const tr = project3D(W, 0, 0);
+      const bl = project3D(0, H, 0);
+      const br = project3D(W, H, 0);
+
+      // Surface fill
+      ctx.fillStyle = '#0c0c0c';
+      ctx.beginPath();
+      ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y);
+      ctx.lineTo(br.x, br.y); ctx.lineTo(bl.x, bl.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Neon border (team colored halves)
+      ctx.save();
+      const ml = project3D(0, H / 2, 0);
+      const mt = project3D(W / 2, 0, 0);
+      const mb = project3D(W / 2, H, 0);
+      const mr = project3D(W, H / 2, 0);
+
+      // Left half border (Italy blue)
+      ctx.strokeStyle = TEAM_LEFT.primary;
+      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.shadowBlur = 15;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(mt.x, mt.y); ctx.lineTo(tl.x, tl.y);
+      ctx.lineTo(bl.x, bl.y); ctx.lineTo(mb.x, mb.y);
+      ctx.stroke();
+
+      // Right half border (Germany white)
+      ctx.strokeStyle = TEAM_RIGHT.primary;
+      ctx.shadowColor = TEAM_RIGHT.primary;
+      ctx.beginPath();
+      ctx.moveTo(mt.x, mt.y); ctx.lineTo(tr.x, tr.y);
+      ctx.lineTo(br.x, br.y); ctx.lineTo(mb.x, mb.y);
+      ctx.stroke();
+      ctx.restore();
+
+      // Center line + circle
+      ctx.save();
+      ctx.strokeStyle = 'rgba(100,180,220,0.2)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 6]);
+      const ct = project3D(W / 2, 0, 0);
+      const cb = project3D(W / 2, H, 0);
+      ctx.beginPath();
+      ctx.moveTo(ct.x, ct.y); ctx.lineTo(cb.x, cb.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const cs = project3D(W / 2, H / 2, 0);
+      const cRx = (mr.x - ml.x) * 0.08;
+      const cRy = cRx * 0.7;
+      ctx.beginPath();
+      ctx.ellipse(cs.x, cs.y, cRx, cRy, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // Paddles (projected as 3D blocks)
+      allPaddles.forEach(p => {
+        const team = p.isLeft ? leftTeam : rightTeam;
+        const identity = team ? getZoneIdentity(p, team.data) : { zone: 'fwd', player: { num: '?', name: '???' } };
+        const isKeeper = identity.zone === 'box';
+        const teamColor = team ? team.data.primary : '#fff';
+        const neonColor = isKeeper ? '#00ff88' : teamColor;
+        const pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
+        const hw = p.w * 1.8, hh = p.h * 0.85, blockH = 14;
+        const b0 = project3D(pcx - hw, pcy - hh, 0);
+        const b2 = project3D(pcx + hw, pcy + hh, 0);
+        const t0 = project3D(pcx - hw, pcy - hh, blockH);
+        const t1 = project3D(pcx + hw, pcy - hh, blockH);
+        const t2 = project3D(pcx + hw, pcy + hh, blockH);
+        const t3 = project3D(pcx - hw, pcy + hh, blockH);
+        ctx.save();
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(t0.x, t0.y); ctx.lineTo(t1.x, t1.y);
+        ctx.lineTo(t2.x, t2.y); ctx.lineTo(t3.x, t3.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      });
 
       ctx.restore();
 
-      // Team names overlay
+      // ── Team names overlay ──
       if (t >= CUTSCENE_TEXT_START && t < CUTSCENE_TEXT_END) {
         const textT = (t - CUTSCENE_TEXT_START) / (CUTSCENE_TEXT_END - CUTSCENE_TEXT_START);
-        // Fade in for first 30%, hold, fade out for last 30%
         let alpha;
         if (textT < 0.2) alpha = textT / 0.2;
         else if (textT > 0.7) alpha = (1 - textT) / 0.3;
@@ -1537,7 +1877,6 @@
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        // Left team name (Italy - blue)
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.font = `bold ${fontSize}px monospace`;
@@ -1547,7 +1886,6 @@
         ctx.fillText(TEAM_LEFT.name.toUpperCase(), W * 0.35, H * 0.48);
         ctx.restore();
 
-        // "vs" in white
         ctx.save();
         ctx.globalAlpha = alpha * 0.6;
         ctx.font = `bold ${fontSize * 0.5}px monospace`;
@@ -1557,7 +1895,6 @@
         ctx.fillText('vs', W * 0.5, H * 0.48);
         ctx.restore();
 
-        // Right team name (Brazil - yellow)
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.font = `bold ${fontSize}px monospace`;
@@ -1568,7 +1905,7 @@
         ctx.restore();
       }
 
-      // Skip hint at bottom
+      // Skip hint
       ctx.save();
       ctx.globalAlpha = 0.3;
       ctx.fillStyle = '#fff';
