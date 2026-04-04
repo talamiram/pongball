@@ -99,6 +99,7 @@
     const BALL_SPEED = 0.30;
     const BALL_MAX_SPEED = 0.60;
     const BALL_ACCEL = 1.03;
+    const SPEED_3D = 1.45;  // 3D field is visually smaller, so speed up to compensate
     const MAX_BOUNCE_ANGLE = Math.PI / 3;
     const HOLD_TIME_LIMIT = 2.0;
 
@@ -654,8 +655,10 @@
     let lastTime = performance.now();
 
     function update(now) {
-      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      let dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
+      // 3D field is visually compressed — scale game speed to match perceived 2D speed
+      if (gameMode === 'match3d') dt *= SPEED_3D;
 
       if (!leftTeam || !ball) return;
 
@@ -1504,7 +1507,7 @@
       // ─── Goal nets (projected) ───
       drawNets3D();
 
-      // ─── Paddles (projected) ───
+      // ─── Paddles (3D blocks, perspective-aligned) ───
       allPaddles.forEach(p => {
         const team = p.isLeft ? leftTeam : rightTeam;
         const identity = team ? getZoneIdentity(p, team.data) : { zone: 'fwd', player: { num: '?', name: '???' } };
@@ -1512,77 +1515,162 @@
         const teamColor = team ? team.data.primary : '#fff';
         const neonColor = isKeeper ? '#00ff88' : teamColor;
 
-        // Project paddle center — paddles are larger in 3D mode for visibility
-        const pcx = p.x + p.w / 2;
-        const pcy = p.y + p.h / 2;
-        const pp = project3D(pcx, pcy, 0);
-        const pw = p.w * pp.scale * 2.2;   // thicker
-        const ph = p.h * pp.scale * 1.6;   // taller
+        // Paddle game-space corners (slightly enlarged for 3D visibility)
+        const cx = p.x + p.w / 2;
+        const cy = p.y + p.h / 2;
+        const hw = p.w * 1.1;  // half-width enlarged
+        const hh = p.h * 0.8;  // half-height enlarged
+        const blockH = 14;     // block height (z-axis) for 3D depth
+
+        // Project all 8 corners of the 3D block
+        const b0 = project3D(cx - hw, cy - hh, 0);  // bottom-face top-left
+        const b1 = project3D(cx + hw, cy - hh, 0);  // bottom-face top-right
+        const b2 = project3D(cx + hw, cy + hh, 0);  // bottom-face bottom-right
+        const b3 = project3D(cx - hw, cy + hh, 0);  // bottom-face bottom-left
+        const t0 = project3D(cx - hw, cy - hh, blockH);  // top-face top-left
+        const t1 = project3D(cx + hw, cy - hh, blockH);  // top-face top-right
+        const t2 = project3D(cx + hw, cy + hh, blockH);  // top-face bottom-right
+        const t3 = project3D(cx - hw, cy + hh, blockH);  // top-face bottom-left
 
         ctx.save();
+
+        // Front face (bottom edge — the side facing the viewer)
         ctx.shadowColor = neonColor;
-        ctx.shadowBlur = p.isPlayer ? 18 : 10;
+        ctx.shadowBlur = p.isPlayer ? 16 : 8;
         ctx.fillStyle = neonColor;
-        ctx.fillRect(pp.x - pw / 2, pp.y - ph / 2, pw, ph);
-        // Bright core
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = '#fff';
-        ctx.globalAlpha = 0.35;
-        ctx.fillRect(pp.x - pw / 2 + 1, pp.y - ph / 2 + 1, pw - 2, ph - 2);
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(b2.x, b2.y); ctx.lineTo(b3.x, b3.y);
+        ctx.lineTo(t3.x, t3.y); ctx.lineTo(t2.x, t2.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Side faces (left and right edges)
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = neonColor;
+        // Right side
+        ctx.beginPath();
+        ctx.moveTo(b1.x, b1.y); ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(t2.x, t2.y); ctx.lineTo(t1.x, t1.y);
+        ctx.closePath();
+        ctx.fill();
+        // Left side
+        ctx.beginPath();
+        ctx.moveTo(b0.x, b0.y); ctx.lineTo(b3.x, b3.y);
+        ctx.lineTo(t3.x, t3.y); ctx.lineTo(t0.x, t0.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Top face (the main visible surface)
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = p.isPlayer ? 22 : 12;
         ctx.globalAlpha = 1;
-        ctx.restore();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(t0.x, t0.y); ctx.lineTo(t1.x, t1.y);
+        ctx.lineTo(t2.x, t2.y); ctx.lineTo(t3.x, t3.y);
+        ctx.closePath();
+        ctx.fill();
 
-        // Label
-        ctx.save();
-        ctx.shadowColor = neonColor;
-        ctx.shadowBlur = 4;
+        // Bright white top highlight
+        ctx.shadowBlur = 0;
         ctx.fillStyle = neonColor;
-        ctx.font = `bold ${Math.max(7, 8 * pp.scale)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.fillText(`#${identity.player.num}`, pp.x, pp.y - ph / 2 - 4 * pp.scale);
+        ctx.globalAlpha = 0.25;
+        ctx.beginPath();
+        ctx.moveTo(t0.x, t0.y); ctx.lineTo(t1.x, t1.y);
+        ctx.lineTo(t2.x, t2.y); ctx.lineTo(t3.x, t3.y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.globalAlpha = 1;
         ctx.restore();
       });
 
-      // ─── Ball (projected) ───
+      // ─── Ball (3D cube, projected) ───
       if (goalPause <= 0 && ball) {
-        const bp = project3D(ball.x, ball.y, ball.z);
-        const r = (ball.size / 2) * bp.scale * 1.4 * (1 + ball.z / 300);
+        const bSize = ball.size * 1.8 * (1 + ball.z / 400);  // cube half-size in game-space
+        const bz = ball.z;
+        const cubeH = bSize * 2.2;  // cube height in z-axis
 
         // Ground shadow when airborne
-        if (ball.z > 2) {
+        if (bz > 2) {
           const gp = project3D(ball.x, ball.y, 0);
-          const shadowAlpha = Math.max(0.05, 0.15 - ball.z / 500);
+          const shadowAlpha = Math.max(0.05, 0.18 - bz / 400);
+          const sr = bSize * gp.scale * 1.5;
           ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
           ctx.beginPath();
-          ctx.ellipse(gp.x, gp.y, r * 1.8, r * 0.5 * bp.scale, 0, 0, Math.PI * 2);
+          ctx.ellipse(gp.x, gp.y, sr * 1.8, sr * 0.5, 0, 0, Math.PI * 2);
           ctx.fill();
         }
 
-        // Ball trail
+        // Ball trail (small fading cubes)
         for (let i = 0; i < ballTrail.length; i++) {
           const t = ballTrail[i];
-          const tp = project3D(t.x, t.y, ball.z * (i / ballTrail.length));
-          const alpha = (i / ballTrail.length) * 0.25;
-          const tr = r * (0.3 + (i / ballTrail.length) * 0.5);
+          const tz = bz * (i / ballTrail.length);
+          const tp = project3D(t.x, t.y, tz + cubeH / 2);
+          const alpha = (i / ballTrail.length) * 0.2;
+          const tr = bSize * tp.scale * (0.3 + (i / ballTrail.length) * 0.4);
           ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-          ctx.beginPath();
-          ctx.arc(tp.x, tp.y, tr, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.fillRect(tp.x - tr, tp.y - tr, tr * 2, tr * 2);
         }
 
-        // Ball core with glow
+        // Project cube corners
+        const cb0 = project3D(ball.x - bSize, ball.y - bSize, bz);
+        const cb1 = project3D(ball.x + bSize, ball.y - bSize, bz);
+        const cb2 = project3D(ball.x + bSize, ball.y + bSize, bz);
+        const cb3 = project3D(ball.x - bSize, ball.y + bSize, bz);
+        const ct0 = project3D(ball.x - bSize, ball.y - bSize, bz + cubeH);
+        const ct1 = project3D(ball.x + bSize, ball.y - bSize, bz + cubeH);
+        const ct2 = project3D(ball.x + bSize, ball.y + bSize, bz + cubeH);
+        const ct3 = project3D(ball.x - bSize, ball.y + bSize, bz + cubeH);
+
         ctx.save();
+
+        // Front face (bottom edge facing viewer)
+        ctx.shadowColor = '#88ddff';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = 'rgba(200,230,255,0.5)';
+        ctx.beginPath();
+        ctx.moveTo(cb2.x, cb2.y); ctx.lineTo(cb3.x, cb3.y);
+        ctx.lineTo(ct3.x, ct3.y); ctx.lineTo(ct2.x, ct2.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Right side face
+        ctx.fillStyle = 'rgba(180,210,240,0.35)';
+        ctx.beginPath();
+        ctx.moveTo(cb1.x, cb1.y); ctx.lineTo(cb2.x, cb2.y);
+        ctx.lineTo(ct2.x, ct2.y); ctx.lineTo(ct1.x, ct1.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Left side face
+        ctx.beginPath();
+        ctx.moveTo(cb0.x, cb0.y); ctx.lineTo(cb3.x, cb3.y);
+        ctx.lineTo(ct3.x, ct3.y); ctx.lineTo(ct0.x, ct0.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Top face (brightest — the main visible surface)
         ctx.shadowColor = '#fff';
-        ctx.shadowBlur = 12 * bp.scale;
+        ctx.shadowBlur = 20;
         ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(bp.x, bp.y, r, 0, Math.PI * 2);
+        ctx.moveTo(ct0.x, ct0.y); ctx.lineTo(ct1.x, ct1.y);
+        ctx.lineTo(ct2.x, ct2.y); ctx.lineTo(ct3.x, ct3.y);
+        ctx.closePath();
         ctx.fill();
+
+        // Second glow pass for intensity
         ctx.shadowColor = '#88ddff';
-        ctx.shadowBlur = 20 * bp.scale;
+        ctx.shadowBlur = 25;
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
         ctx.beginPath();
-        ctx.arc(bp.x, bp.y, r * 0.7, 0, Math.PI * 2);
+        ctx.moveTo(ct0.x, ct0.y); ctx.lineTo(ct1.x, ct1.y);
+        ctx.lineTo(ct2.x, ct2.y); ctx.lineTo(ct3.x, ct3.y);
+        ctx.closePath();
         ctx.fill();
+
         ctx.restore();
       }
 
