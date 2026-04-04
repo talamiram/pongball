@@ -24,6 +24,7 @@
     const ctx = canvas.getContext('2d');
 
     let W, H;
+    let leftTeam = null, rightTeam = null;
     function resize() {
       W = window.innerWidth;
       H = window.innerHeight;
@@ -123,7 +124,6 @@
     // ─── STATE ───
     let scoreL = 0, scoreR = 0;
     let ball;
-    let leftTeam, rightTeam;
     let allPaddles = [];
 
     let ballState = 'on_gk';
