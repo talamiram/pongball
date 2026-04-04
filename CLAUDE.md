@@ -202,22 +202,65 @@ Right team's main forward (Schillaci) has special AI for the catch-and-shoot mec
 
 ---
 
-## Rendering
+## Visual Direction: Neon Arcade Table
 
-**Dark green pitch** (#0a1f0a) with lighter green (#1a4d1a) field markings: center line (dashed), center circle, penalty areas, goal areas, field border.
+The visual target is the **Atari Pong arcade coffee table** — dark surface, neon-colored edges, glowing elements, clean minimalism. Think arcade, not FIFA. The game should look like it's being played on a glowing table in a dark room.
 
-**Goal posts** are white rectangles. Goal net is a subtle grid of thin white lines behind the posts.
+### Surface & Field
 
-**Paddles** are drawn in team colors. Player-controlled paddle has a glow effect (shadowBlur). Each paddle has its shirt number displayed above it in small monospace text.
+**Background:** Near-black surface (#080808 to #0a0a0a). NOT green. This is an arcade table, not a grass pitch. The playing surface should feel like dark glass or matte black.
 
-**Ball** is a white circle. When airborne: drawn offset upward by `ball.z` pixels, scales up slightly (`1 + z/300`), and casts an elliptical shadow on the ground that grows and fades with height.
+**Field lines:** Thin, glowing neon lines instead of painted markings. Use `shadowBlur` and bright colors (cyan, white, or soft blue) for a neon tube effect. Center line (dashed), center circle, penalty areas, goal areas, field border — all rendered as glowing lines on the dark surface. Keep them subtle — they should frame the action, not dominate it.
 
-**Scoreboard** at top center: team short codes in team colors flanking the score. Player name shown below Maradona's paddle when in outfield control.
+**Goal mouths:** Neon-lit goal posts. Bright white or team-colored glow. The goal area should feel like a lit-up target zone.
 
-**HUD elements:**
-- Hold timer bar (white, turns red below 30%) when player is holding the ball
-- Charge indicator (green→yellow gradient) when Space is held
-- Text prompts for serve/shoot instructions
+### Paddles
+
+**Neon paddles** in team colors — Argentina light blue (#75AADB), Italy dark blue (#003DA5). Each paddle should have a strong glow effect (`shadowBlur` with team color, multiple passes for intensity). The paddle itself is a clean rectangle, but the glow makes it feel electric.
+
+**Player-controlled paddle** gets a brighter, more intense glow — like it's "powered up" compared to AI paddles. Shirt number displayed above in small monospace text, also glowing.
+
+### Ball
+
+**Glowing white ball** with a light trail. The ball should have a bright white core with a soft white/cyan glow (`shadowBlur`). As it moves, it should leave a fading trail (store last N positions, draw with decreasing opacity) — like a light streak across the dark table.
+
+When airborne: drawn offset upward by `ball.z` pixels, scales up slightly (`1 + z/300`), and casts a dim ground shadow (ellipse, low opacity) that grows and fades with height. The shadow should be a subtle dark spot, not a bright glow — it's a shadow on a dark surface.
+
+### Scoreboard & HUD
+
+**Scoreboard** at top center: team short codes in neon team colors flanking the score. Score numbers should be large and glowing, like an LED display. Think digital clock / arcade score aesthetic.
+
+**HUD elements:** Keep the existing functionality but style them neon:
+- Hold timer bar: glowing white, turns glowing red below 30%
+- Charge indicator: neon green→yellow gradient with glow
+- Text prompts: small, clean, slightly glowing — not intrusive
+
+### Field Border Glow
+
+The outer edge of the playing field should have a **subtle neon border glow** — like the LED strips on the Atari Pong table. This can be team-colored (Argentina's color on the left half, Italy's on the right) or a neutral cyan/white. This border glow frames the entire playing surface and is the strongest visual anchor.
+
+### Key Principles
+
+1. **Dark background, bright elements.** Everything that matters glows. The surface is just darkness.
+2. **Glow is the primary visual language.** Use `shadowBlur` generously on canvas. Multiple shadow passes for intensity.
+3. **Minimal, clean shapes.** Paddles are rectangles, ball is a circle, lines are thin. The glow does the visual work, not complexity.
+4. **Team colors through light.** Argentina and Italy aren't painted — they're lit up. Their colors come from neon glow.
+5. **No textures, no gradients on surfaces.** This is flat dark + neon glow. Keep it simple.
+
+---
+
+## Intro Cutscene
+
+When a match starts (player selects Match Mode or Physics Lab from menu), play a brief **zoom-in cutscene** before gameplay begins:
+
+1. **Wide shot:** Show the entire playing surface from a slight distance — as if looking at the arcade table from above. The field border glow is visible, paddles are in starting positions, everything is lit up but the ball hasn't spawned.
+2. **Zoom in:** Over ~1.5–2 seconds, smoothly zoom/scale into the normal gameplay view. Use canvas `scale()` and `translate()` — start at ~0.7× scale centered, animate to 1.0× scale at normal position.
+3. **Team names flash:** During or just after the zoom, briefly flash the team names large and centered ("ARGENTINA vs ITALY") in neon team colors, then fade out.
+4. **Ball spawns:** After the zoom completes, the ball appears on the serving GK and gameplay begins.
+
+The cutscene should be **skippable** (press Space or Enter to skip straight to gameplay). Keep it short and punchy — this is an arcade game, not a movie. The zoom should feel like a camera settling onto the table.
+
+**Implementation:** Use a `cutsceneTimer` that counts down during the cutscene phase. The main game loop checks if `gameMode === 'cutscene'` and renders the zoom animation instead of normal gameplay. Once the timer expires (or player skips), switch to normal `gameMode = 'match'` or `'physics'`.
 
 ---
 
@@ -250,7 +293,7 @@ Use Physics Lab to tune: lob arc feel, charge sensitivity, gravity, goal post co
 1. Old `src/` folder, `style.css`, and `setup.sh` still exist in the repo — unused, can be deleted
 2. Formation AI is basic — players don't coordinate or make "runs"
 3. No sound effects
-4. No graphics/sprites — everything is rectangles and circles
+4. Visual style needs to match neon arcade direction (see Rendering section)
 5. Single match only — no tournament, no team selection screen
 6. No 2-player support yet (was planned: WASD for second player)
 7. Ball sometimes gets stuck in rapid paddle collisions when multiple formation players are close together
@@ -264,7 +307,8 @@ Use Physics Lab to tune: lob arc feel, charge sensitivity, gravity, goal post co
 1. **Feel over features.** Get the core mechanic feeling right before adding anything new. The catch-and-release + lob system is the game.
 2. **Single file.** No build tools, no dependencies, no complexity. Everything inline in index.html.
 3. **Ratio-based sizing.** Every dimension is a percentage of W or H. The game must look right on any screen.
-4. **Pong DNA.** Vertical paddles, ball bouncing, that satisfying deflection feel. The football layer adds formation and lobbing, but underneath it's still Pong.
+4. **Pong DNA.** Vertical paddles, ball bouncing, that satisfying deflection feel. The football layer adds formation and lobbing, but underneath it's still Pong. Visually: neon arcade table, not FIFA.
+5. **Neon arcade aesthetic.** Dark surface, glowing elements, clean shapes. Inspired by the Atari Pong coffee table. Everything that matters glows.
 5. **Iterate fast.** Edit → push → live in 60 seconds. Test in browser, not in code.
 
 ---
@@ -277,10 +321,10 @@ Use Physics Lab to tune: lob arc feel, charge sensitivity, gravity, goal post co
 - Player switching (tab between your formation players)
 - Set pieces (corners, free kicks)
 - Sound effects (8-bit style)
-- Simple sprites or pixel art for players
+- Goal celebration animation (neon flash, screen shake)
 - Difficulty levels (AI skill sliders)
 - Mobile touch controls
-- Replays / goal celebration animation
+- Replays
 
 ---
 
