@@ -809,121 +809,85 @@
       ctx.restore();
     }
 
-    // ─── GOAL NETS (flat 2D mode) ───
-    function drawNets() {
+    // ─── GOAL NET DRAWING (shared logic) ───
+    function drawNetSide(x, dir, rattle, projFn) {
       const gt = goalTop(), gb = goalBottom();
-      const glL = W * GOAL_LINE_RATIO;
-      const glR = W * (1 - GOAL_LINE_RATIO);
-      const netDepth = GOAL_DEPTH;
-      const netLines = 6;  // horizontal strings
-      const netVLines = 4; // vertical strings
+      const netDepth = W * 0.04;     // much deeper net
+      const netHLines = 10;          // horizontal strings
+      const netVLines = 6;           // vertical/depth strings
 
-      [
-        { x: glL, dir: -1, rattle: netRattleLeft },
-        { x: glR, dir: 1, rattle: netRattleRight }
-      ].forEach(({ x, dir, rattle }) => {
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-        ctx.lineWidth = 1;
+      ctx.save();
+      const intensity = rattle / 1.2;
+      const freq = 20 + netRattleSeed % 12;
+      const now = performance.now() / 1000;
 
-        const intensity = rattle / 1.2;  // 1.0 at start, decays to 0
-        const freq = 18 + netRattleSeed % 10;
+      // Base net opacity (always visible)
+      const baseAlpha = 0.25;
+      const rattleAlpha = baseAlpha + intensity * 0.5;
 
-        for (let i = 0; i <= netLines; i++) {
-          const t = i / netLines;
-          const ny = gt + t * (gb - gt);
-          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 4;
-          ctx.beginPath();
-          ctx.moveTo(x, ny);
-          ctx.lineTo(x - dir * netDepth + shake, ny + shake * 0.3);
-          ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${rattleAlpha})`;
+      ctx.lineWidth = 1;
+      if (intensity > 0) {
+        ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 12 * intensity;
+      }
+
+      // Horizontal strings (across the goal mouth, going into depth)
+      for (let i = 0; i <= netHLines; i++) {
+        const t = i / netHLines;
+        const ny = gt + t * (gb - gt);
+        const shake = intensity * Math.sin(now * freq + i * 2.3 + netRattleSeed) * 8;
+        const shakeY = intensity * Math.sin(now * freq * 1.3 + i * 1.7 + netRattleSeed) * 3;
+        const x1 = x, y1 = ny;
+        const x2 = x - dir * netDepth + shake, y2 = ny + shakeY;
+        if (projFn) {
+          const p1 = projFn(x1, y1, 0), p2 = projFn(x2, y2, 0);
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         }
-        for (let i = 0; i <= netVLines; i++) {
-          const t = i / netVLines;
-          const nx = x - dir * netDepth * t;
-          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 3.2 + netRattleSeed) * 3 * t;
-          ctx.beginPath();
-          ctx.moveTo(nx + shake, gt + shake * 0.2);
-          ctx.lineTo(nx + shake, gb + shake * 0.2);
-          ctx.stroke();
-        }
+      }
 
-        // Brighter net when rattling
-        if (rattle > 0) {
-          ctx.strokeStyle = `rgba(255,255,255,${intensity * 0.3})`;
-          ctx.shadowColor = '#fff';
-          ctx.shadowBlur = 8 * intensity;
-          for (let i = 0; i <= netLines; i++) {
-            const t = i / netLines;
-            const ny = gt + t * (gb - gt);
-            const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 6;
-            ctx.beginPath();
-            ctx.moveTo(x, ny);
-            ctx.lineTo(x - dir * netDepth + shake, ny + shake * 0.3);
-            ctx.stroke();
-          }
+      // Vertical strings (top to bottom at different depths)
+      for (let i = 0; i <= netVLines; i++) {
+        const t = i / netVLines;
+        const nx = x - dir * netDepth * t;
+        const shake = intensity * Math.sin(now * freq * 0.9 + i * 3.1 + netRattleSeed) * 6 * t;
+        const x1 = nx + shake, y1 = gt + shake * 0.2;
+        const x2 = nx + shake, y2 = gb + shake * 0.2;
+        if (projFn) {
+          const p1 = projFn(x1, y1, 0), p2 = projFn(x1, y2, 0);
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         }
+      }
 
-        ctx.restore();
-      });
+      // Back wall of net (vertical line at full depth)
+      const backX = x - dir * netDepth;
+      const backShake = intensity * Math.sin(now * freq + netRattleSeed) * 5;
+      if (projFn) {
+        const p1 = projFn(backX + backShake, gt, 0), p2 = projFn(backX + backShake, gb, 0);
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.moveTo(backX + backShake, gt); ctx.lineTo(backX + backShake, gb); ctx.stroke();
+      }
+
+      ctx.restore();
     }
 
-    // ─── GOAL NETS (3D projected) ───
-    function drawNets3D() {
-      const gt = goalTop(), gb = goalBottom();
+    function drawNets() {
       const glL = W * GOAL_LINE_RATIO;
       const glR = W * (1 - GOAL_LINE_RATIO);
-      const netDepth = GOAL_DEPTH;
-      const netLines = 6;
-      const netVLines = 4;
+      drawNetSide(glL, -1, netRattleLeft, null);
+      drawNetSide(glR, 1, netRattleRight, null);
+    }
 
-      [
-        { x: glL, dir: -1, rattle: netRattleLeft },
-        { x: glR, dir: 1, rattle: netRattleRight }
-      ].forEach(({ x, dir, rattle }) => {
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-        ctx.lineWidth = 1;
-
-        const intensity = rattle / 1.2;
-        const freq = 18 + netRattleSeed % 10;
-
-        // Horizontal net strings
-        for (let i = 0; i <= netLines; i++) {
-          const t = i / netLines;
-          const ny = gt + t * (gb - gt);
-          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 4;
-          const p1 = project3D(x, ny, 0);
-          const p2 = project3D(x - dir * netDepth + shake, ny + shake * 0.3, 0);
-          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
-        }
-        // Vertical net strings
-        for (let i = 0; i <= netVLines; i++) {
-          const t = i / netVLines;
-          const nx = x - dir * netDepth * t;
-          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 3.2 + netRattleSeed) * 3 * t;
-          const p1 = project3D(nx + shake, gt + shake * 0.2, 0);
-          const p2 = project3D(nx + shake, gb + shake * 0.2, 0);
-          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
-        }
-
-        // Brighter glow when rattling
-        if (rattle > 0) {
-          ctx.strokeStyle = `rgba(255,255,255,${intensity * 0.35})`;
-          ctx.shadowColor = '#fff';
-          ctx.shadowBlur = 8 * intensity;
-          for (let i = 0; i <= netLines; i++) {
-            const t = i / netLines;
-            const ny = gt + t * (gb - gt);
-            const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 6;
-            const p1 = project3D(x, ny, 0);
-            const p2 = project3D(x - dir * netDepth + shake, ny + shake * 0.3, 0);
-            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
-          }
-        }
-
-        ctx.restore();
-      });
+    function drawNets3D() {
+      const glL = W * GOAL_LINE_RATIO;
+      const glR = W * (1 - GOAL_LINE_RATIO);
+      drawNetSide(glL, -1, netRattleLeft, project3D);
+      drawNetSide(glR, 1, netRattleRight, project3D);
     }
 
     // ─── NEON PADDLE ───
