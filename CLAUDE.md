@@ -146,18 +146,18 @@ FWD zone:  0.38 – 0.50   →  Maradona / Caniggia
 
 ## Paddle Sizes
 
+Each team has exactly **2 physical paddles**: one GK and one outfield. That's it. Both teams' outfield paddles must be the **same size** — the player's advantage is being human-controlled, not having a bigger paddle.
+
 All sizes are responsive (height as ratio of screen H):
 
-| Role | Width (px) | Height (ratio of H) |
+| Paddle | Width (px) | Height (ratio of H) |
 |---|---|---|
 | GK | 8 | 0.07 |
-| DEF | 7 | 0.045 |
-| MID | 7 | 0.038 |
-| FWD (both forwards) | 7 | 0.05 |
+| Outfield (both teams) | 7 | 0.05 |
 
-Paddles are deliberately small so the ball can find gaps in the formation. The formation grid is porous — flat shots CAN get through, but lobbing over is safer.
+There is NO separate `PLAYER_H_RATIO`. Both outfield paddles use the same dimensions. Do not give the player's outfield paddle a larger size — remove any `_isPlayer` size branching in `makePaddle()`.
 
-**Important: Both main forwards (Maradona and Schillaci) should be visually similar in size.** The player's advantage comes from being human-controlled (better decisions, timing), NOT from having a bigger paddle. Don't give the player paddle a noticeably larger height ratio or size multiplier. Use the same base FWD height ratio for both — any stat-based `size` variation should be subtle (±5% max, not 15%+).
+The outfield paddle's **identity** (name, number) changes by position zone (see Formation Grid above), but its **physical size stays constant** regardless of which player name it's showing.
 
 ---
 
