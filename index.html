@@ -39,7 +39,7 @@
     //  GAME MODE: 'menu' | 'match' | 'physics'
     // ═══════════════════════════════════════════
     let gameMode = 'menu';
-    let menuSelection = 0;  // 0 = match, 1 = physics
+    let menuSelection = 0;  // 0 = match, 1 = physics, 2 = worldcup
 
     // ─── TEAMS: ITALIA 90 SEMIFINAL ───
     // Stats: speed (movement multiplier), reaction (ball tracking), size (paddle height multiplier)
@@ -96,9 +96,9 @@
     const OUTFIELD_H_RATIO = 0.07;
     const BALL_SIZE = 7;
 
-    const BALL_SPEED = 0.22;
-    const BALL_MAX_SPEED = 0.50;
-    const BALL_ACCEL = 1.02;
+    const BALL_SPEED = 0.30;
+    const BALL_MAX_SPEED = 0.60;
+    const BALL_ACCEL = 1.03;
     const MAX_BOUNCE_ANGLE = Math.PI / 3;
     const HOLD_TIME_LIMIT = 2.0;
 
@@ -156,14 +156,18 @@
       }
       // Menu input
       if (gameMode === 'menu') {
-        if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
-          menuSelection = menuSelection === 0 ? 1 : 0;
+        if (e.code === 'ArrowUp') {
+          menuSelection = (menuSelection + 2) % 3;
+        }
+        if (e.code === 'ArrowDown') {
+          menuSelection = (menuSelection + 1) % 3;
         }
         if (e.code === 'Enter' || e.code === 'Space') {
-          startGame(menuSelection === 0 ? 'match' : 'physics');
+          startGame(['match', 'physics', 'worldcup'][menuSelection]);
         }
         if (e.code === 'Digit1') startGame('match');
         if (e.code === 'Digit2') startGame('physics');
+        if (e.code === 'Digit3') startGame('worldcup');
       }
       // ESC back to menu
       if (e.code === 'Escape' && gameMode !== 'menu') {
@@ -292,6 +296,7 @@
     // ─── INIT ───
     function startGame(mode) {
       gameMode = mode;
+      if (mode === 'worldcup') return;  // World Cup has its own screen flow
       const isPhysics = mode === 'physics';
       leftTeam = buildTeam(TEAM_LEFT, true, isPhysics);
       rightTeam = buildTeam(TEAM_RIGHT, false, isPhysics);
@@ -451,26 +456,6 @@
       const speed = H * OF_SPEED_RATIO * 0.7 * (0.6 + stats.speed * 0.8);
       const cy = paddle.y + paddle.h / 2;
 
-      // When holding ball: aim toward player GK gap and shoot
-      if (ballState === 'held_ai' && holdPaddle === paddle) {
-        // Aim away from player's GK position
-        const playerGK = leftTeam.gk;
-        const gkCy = playerGK.y + playerGK.h / 2;
-        // Shoot toward the opposite side of where GK is
-        const targetY = gkCy < H / 2 ? H * 0.65 : H * 0.35;
-        const diff = targetY - cy;
-        paddle.y += Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
-        paddle.y = clamp(paddle.y, 0, H - paddle.h);
-        aiShootTimer -= dt;
-        if (aiShootTimer <= 0) {
-          // Vary shot: lob if GK is close, flat if GK is far
-          const gkDist = Math.abs(gkCy - cy);
-          const chargeTime = gkDist < H * 0.15 ? 0.25 + Math.random() * 0.25 : Math.random() * 0.12;
-          shootFromPaddle(paddle, false, chargeTime);
-        }
-        return;
-      }
-
       // Normal movement: track ball with reaction-based lag
       const reactionMult = 0.5 + stats.reaction * 0.5;
       let targetY = H / 2;
@@ -595,40 +580,50 @@
         if (!airborne) checkGoalPosts();
 
         if (!airborne) {
-          // Player forward: VOLLEY if Space held, CATCH if not
-          const playerFwd = leftTeam.mainFwd;
-          if (playerFwd && hitPaddle(playerFwd)) {
-            if (spaceDown) {
-              // VOLLEY — first-time shot, directed by arrows
-              volleyShot(playerFwd, true);
-              return;
-            }
-            // CATCH — hold the ball
-            ballState = 'held_player';
-            holdPaddle = playerFwd;
-            holdOffsetY = clamp(ball.y - (playerFwd.y + playerFwd.h / 2),
-                                -playerFwd.h / 2, playerFwd.h / 2);
-            holdTimer = 0;
-            ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0;
-            lastShotMaxZ = currentMaxZ;
-            return;
-          }
-
-          const aiFwd = rightTeam.mainFwd;
-          if (aiFwd && hitPaddle(aiFwd)) {
-            ballState = 'held_ai';
-            holdPaddle = aiFwd;
-            holdOffsetY = clamp(ball.y - (aiFwd.y + aiFwd.h / 2),
-                                -aiFwd.h / 2, aiFwd.h / 2);
-            holdTimer = 0;
-            aiShootTimer = 0.3 + Math.random() * 0.7;
-            ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0;
-            return;
-          }
-
+          // All paddles deflect like Pong — no catching for outfield
+          // GK can catch (probability-based), outfield = pure bounce
           for (const p of allPaddles) {
-            if (p === playerFwd || p === aiFwd) continue;
-            hitPaddle(p);
+            if (hitPaddle(p)) {
+              // GK catch: sometimes the GK traps the ball
+              if (p.isGK) {
+                const catchChance = p.isLeft ? 0.6 : 0.5;  // player GK catches more often
+                if (Math.random() < catchChance) {
+                  const isLeft = p.isLeft;
+                  serveFromLeft = isLeft;
+                  ballState = 'on_gk';
+                  ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0;
+                  goalPause = 0.3;
+                  lastShotMaxZ = currentMaxZ;
+                  currentMaxZ = 0;
+                  return;
+                }
+                // GK didn't catch — ball already deflected by hitPaddle
+              }
+
+              // If Space held during deflection: add lob + direction control
+              if (spaceDown && p.isPlayer) {
+                let aimY = 0;
+                if (keys['ArrowUp'])   aimY = -0.35;
+                if (keys['ArrowDown']) aimY = 0.35;
+                ball.vy += aimY * Math.abs(ball.vx);
+
+                // Lob: charge time controls height
+                let lobMult = 1.0;
+                if (keys['ArrowDown']) lobMult = 0.0;  // flatten
+                if (keys['ArrowUp'])   lobMult = 1.4;  // boost
+                ball.vz = spaceHeldTime * H * LOB_POWER * lobMult;
+                spaceHeldTime = 0;
+              }
+
+              // AI forward: small random lob occasionally
+              if (!p.isGK && !p.isPlayer && !p.isLeft) {
+                if (Math.random() < 0.2) {
+                  ball.vz = (0.05 + Math.random() * 0.15) * H * LOB_POWER;
+                }
+              }
+
+              break;  // only process first paddle hit per step
+            }
           }
         }
 
@@ -693,7 +688,7 @@
       const gk = leftTeam.gk;
 
       // When Space is held: arrows AIM the shot, don't move the paddle
-      if (spaceDown && (ballState === 'on_gk' || ballState === 'held_player' || ballState === 'live')) {
+      if (spaceDown && ballState === 'on_gk') {
         // Arrows are read at shot time — paddle stays still
       } else if (playerControlsGK) {
         if (keys['ArrowUp'])   gk.y -= gkSpeed * dt;
@@ -747,24 +742,9 @@
         return;
       }
 
-      if (ballState === 'held_player' && holdPaddle) {
-        stickBallToFront(holdPaddle, true);
-        holdTimer += dt;
-        if (spaceDown) spaceHeldTime += dt;
-        if (consumeRelease('Space')) {
-          shootFromPaddle(holdPaddle, true, spaceHeldTime);
-          spaceHeldTime = 0;
-        } else if (holdTimer >= HOLD_TIME_LIMIT) {
-          shootFromPaddle(holdPaddle, true, 0);
-        }
-        return;
-      }
-
-      if (ballState === 'held_ai' && holdPaddle) {
-        stickBallToFront(holdPaddle, false);
-        holdTimer += dt;
-        if (holdTimer >= HOLD_TIME_LIMIT) shootFromPaddle(holdPaddle, false, 0);
-        return;
+      // Track space held time for lob control during live play
+      if (spaceDown && ballState === 'live') {
+        spaceHeldTime += dt;
       }
 
       physicsStep(dt);
@@ -1239,20 +1219,8 @@
       const fg = '#fff';
       const fgAlpha = 'rgba(255,255,255,';
 
-      // Hold timer
-      if (ballState === 'held_player' && holdPaddle) {
-        const barW = 36; const barH = 3;
-        const bx = holdPaddle.x + holdPaddle.w + 6;
-        const by = holdPaddle.y - 8;
-        const pct = 1 - (holdTimer / HOLD_TIME_LIMIT);
-        ctx.fillStyle = fgAlpha + '0.15)';
-        ctx.fillRect(bx, by, barW, barH);
-        ctx.fillStyle = pct > 0.3 ? fg : '#f44';
-        ctx.fillRect(bx, by, barW * pct, barH);
-      }
-
-      // Charge indicator
-      if (spaceDown && (ballState === 'on_gk' && serveFromLeft || ballState === 'held_player')) {
+      // Charge indicator (lob power) — shows during serve or when Space held in play
+      if (spaceDown && ((ballState === 'on_gk' && serveFromLeft) || ballState === 'live')) {
         const maxCharge = 1.5;
         const charge = clamp(spaceHeldTime / maxCharge, 0, 1);
         const barW = 30; const barH = 3;
@@ -1341,7 +1309,7 @@
       ctx.fillText('PONGBALL', cx, cy - 60);
 
       // Menu items
-      const items = ['MATCH', 'PHYSICS LAB'];
+      const items = ['MATCH', 'PHYSICS LAB', 'WORLD CUP'];
 
       items.forEach((label, i) => {
         const iy = cy + 20 + i * 50;
@@ -1466,10 +1434,36 @@
       }
     }
 
+    // ─── WORLD CUP SCREEN ───
+    function renderWorldCup() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      const cx = W / 2;
+
+      // Title
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.max(28, W * 0.03)}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText('WORLD CUP', cx, H * 0.15);
+
+      // Coming soon placeholder
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText('COMING SOON', cx, H * 0.25);
+
+      // ESC hint
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.font = '11px monospace';
+      ctx.fillText('ESC = back to menu', cx, H * 0.92);
+    }
+
     // ─── MAIN LOOP ───
     function loop(now) {
       if (gameMode === 'menu') {
         renderMenu();
+      } else if (gameMode === 'worldcup') {
+        renderWorldCup();
       } else {
         update(now);
         render();
