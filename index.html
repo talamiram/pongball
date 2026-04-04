@@ -486,8 +486,7 @@
       goalPause = 0;  // no pause at kickoff (resetAfterGoal sets 0.8s pause for goals)
       lastTime = performance.now();
 
-      // Start crowd sounds
-      startCrowd();
+      // Audio context ready for goal sounds (no ambient crowd)
 
       if (mode === 'match' || mode === 'match3d') {
         cutsceneActive = true;
@@ -675,7 +674,6 @@
         // Rubber bounce effect on paddle + sound
         const bounceKey = p.isLeft ? 'left' : 'right';
         paddleBounce[bounceKey] = { timer: 0.3, intensity: Math.min(newSpeed / (W * 0.3), 1.0) };
-        playHitSound();
 
         return true;
       }
@@ -758,12 +756,10 @@
         if (ball.y - ball.size / 2 < 0) {
           ball.y = ball.size / 2;
           ball.vy = Math.abs(ball.vy) * 0.97;
-          playWallSound();
         }
         if (ball.y + ball.size / 2 > H) {
           ball.y = H - ball.size / 2;
           ball.vy = -Math.abs(ball.vy) * 0.97;
-          playWallSound();
         }
 
         const airborne = ball.z > AIR_THRESHOLD;
