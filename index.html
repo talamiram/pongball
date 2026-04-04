@@ -90,10 +90,10 @@
     };
 
     // ─── CONSTANTS ───
-    const PADDLE_W_GK = 7;
-    const PADDLE_W_OF = 7;
-    const GK_H_RATIO = 0.05;
-    const OUTFIELD_H_RATIO = 0.05;
+    const PADDLE_W_GK = 12;
+    const PADDLE_W_OF = 12;
+    const GK_H_RATIO = 0.07;
+    const OUTFIELD_H_RATIO = 0.07;
     const BALL_SIZE = 7;
 
     const BALL_SPEED = 0.22;
@@ -116,12 +116,15 @@
     const GK_SPEED_RATIO = 0.40;
 
     const FORM_X = {
-      gkL: 0.025, defL: 0.14, midL: 0.30, fwdL: 0.43,
-      gkR: 0.975, defR: 0.86, midR: 0.70, fwdR: 0.57
+      gkL: 0.06, defL: 0.14, midL: 0.30, fwdL: 0.43,
+      gkR: 0.94, defR: 0.86, midR: 0.70, fwdR: 0.57
     };
 
     // ─── STATE ───
     let scoreL = 0, scoreR = 0;
+    // Perspective transform functions (set by drawField in match mode)
+    let _toScreen = (gx, gy) => ({ x: gx, y: gy });
+    let _perspScale = (gy) => 1;
     let ball;
     let allPaddles = [];
 
@@ -773,21 +776,10 @@
 
     // ─── DRAW FIELD ───
     function drawField() {
-      // White background for match mode
-      ctx.fillStyle = gameMode === 'physics' ? '#0a1f0a' : '#4a8c3f';
-      ctx.fillRect(0, 0, W, H);
-
-      // Grass stripes in match mode
-      if (gameMode !== 'physics') {
-        const stripeW = W / 12;
-        ctx.fillStyle = 'rgba(255,255,255,0.04)';
-        for (let i = 0; i < 12; i += 2) {
-          ctx.fillRect(i * stripeW, 0, stripeW, H);
-        }
-      }
-
       if (gameMode === 'physics') {
-        // Physics lab: keep the green field look
+        // Physics lab: dark green, minimal markings
+        ctx.fillStyle = '#0a1f0a';
+        ctx.fillRect(0, 0, W, H);
         ctx.strokeStyle = '#1a4d1a';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([8, 8]);
@@ -795,189 +787,457 @@
         ctx.setLineDash([]);
         ctx.beginPath(); ctx.arc(W / 2, H / 2, H * 0.10, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeRect(1, 1, W - 2, H - 2);
+
+        // Physics lab goals (simple)
+        const gt = goalTop(), gb = goalBottom();
+        ctx.fillStyle = '#fff';
+        [0, 1].forEach(side => {
+          const isLeft = side === 0;
+          ctx.fillRect(isLeft ? 0 : W - 3, gt, 3, gb - gt);
+        });
+        return;
       }
 
-      // Goal posts + 3D perspective nets
+      // ========== MATCH MODE: Perspective field (Atari table style) ==========
+
+      // Dark background
+      ctx.fillStyle = '#122214';
+      ctx.fillRect(0, 0, W, H);
+
+      // Perspective field corners (wider at bottom = closer to viewer)
+      const pTopY = H * 0.14;    // far edge y
+      const pBotY = H * 0.80;    // near edge y
+      const pTopL = W * 0.22;    // far-left x
+      const pTopR = W * 0.78;    // far-right x
+      const pBotL = W * 0.04;    // near-left x
+      const pBotR = W * 0.96;    // near-right x
+      const baseH = H * 0.12;    // 3D base depth below field
+
+      // Helper: interpolate field edges at a given t (0=top, 1=bottom)
+      function fieldEdge(t) {
+        const y = pTopY + t * (pBotY - pTopY);
+        const l = pTopL + t * (pBotL - pTopL);
+        const r = pTopR + t * (pBotR - pTopR);
+        return { y, l, r };
+      }
+
+      // Map game coords to screen perspective
+      function toScreen(gx, gy) {
+        const ty = gy / H;
+        const e = fieldEdge(ty);
+        return { x: e.l + (gx / W) * (e.r - e.l), y: e.y };
+      }
+
+      // Scale factor at a given game-y
+      function perspScaleAt(gy) {
+        const ty = gy / H;
+        const e = fieldEdge(ty);
+        return (e.r - e.l) / W;
+      }
+
+      // Store for other draw functions
+      _toScreen = toScreen;
+      _perspScale = perspScaleAt;
+
+      // --- 3D base (front face below field) ---
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath();
+      ctx.moveTo(pBotL, pBotY);
+      ctx.lineTo(pBotR, pBotY);
+      ctx.lineTo(pBotR + baseH * 0.15, pBotY + baseH);
+      ctx.lineTo(pBotL + baseH * 0.15, pBotY + baseH);
+      ctx.closePath();
+      ctx.fill();
+
+      // Right side face
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.moveTo(pTopR, pTopY);
+      ctx.lineTo(pBotR, pBotY);
+      ctx.lineTo(pBotR + baseH * 0.15, pBotY + baseH);
+      ctx.lineTo(pTopR + baseH * 0.08, pTopY + baseH * 0.6);
+      ctx.closePath();
+      ctx.fill();
+
+      // --- White field border ---
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(pTopL, pTopY); ctx.lineTo(pTopR, pTopY);
+      ctx.lineTo(pBotR, pBotY); ctx.lineTo(pBotL, pBotY);
+      ctx.closePath();
+      ctx.fill();
+
+      // --- Green grass (slightly inset from white border) ---
+      const inset = 0.012;
+      const gTopL = pTopL + (pTopR - pTopL) * inset;
+      const gTopR = pTopR - (pTopR - pTopL) * inset;
+      const gBotL = pBotL + (pBotR - pBotL) * inset;
+      const gBotR = pBotR - (pBotR - pBotL) * inset;
+      const gTopY = pTopY + (pBotY - pTopY) * inset;
+      const gBotY = pBotY - (pBotY - pTopY) * inset;
+
+      ctx.fillStyle = '#699a55';
+      ctx.beginPath();
+      ctx.moveTo(gTopL, gTopY); ctx.lineTo(gTopR, gTopY);
+      ctx.lineTo(gBotR, gBotY); ctx.lineTo(gBotL, gBotY);
+      ctx.closePath();
+      ctx.fill();
+
+      // --- Alternating grass stripes (perspective trapezoids) ---
+      const stripeCount = 16;
+      for (let i = 0; i < stripeCount; i += 2) {
+        const t1 = i / stripeCount;
+        const t2 = (i + 1) / stripeCount;
+        const sTopL1 = gTopL + (gTopR - gTopL) * t1;
+        const sTopL2 = gTopL + (gTopR - gTopL) * t2;
+        const sBotL1 = gBotL + (gBotR - gBotL) * t1;
+        const sBotL2 = gBotL + (gBotR - gBotL) * t2;
+        ctx.fillStyle = '#357f35';
+        ctx.beginPath();
+        ctx.moveTo(sTopL1, gTopY); ctx.lineTo(sTopL2, gTopY);
+        ctx.lineTo(sBotL2, gBotY); ctx.lineTo(sBotL1, gBotY);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // --- White field markings in perspective ---
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // Center line (vertical in game = perspective line on screen)
+      const clTop = toScreen(W / 2, 0);
+      const clBot = toScreen(W / 2, H);
+      ctx.beginPath();
+      ctx.moveTo(clTop.x, clTop.y); ctx.lineTo(clBot.x, clBot.y);
+      ctx.stroke();
+
+      // Center circle (perspective ellipse — sample points around circle)
+      const ccR = H * 0.13;
+      ctx.beginPath();
+      for (let a = 0; a <= Math.PI * 2; a += 0.1) {
+        const gx = W / 2 + Math.cos(a) * ccR * (W / H);
+        const gy = H / 2 + Math.sin(a) * ccR;
+        const sp = toScreen(gx, gy);
+        if (a === 0) ctx.moveTo(sp.x, sp.y);
+        else ctx.lineTo(sp.x, sp.y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // Center spot
+      const cs = toScreen(W / 2, H / 2);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(cs.x, cs.y, 3, 0, Math.PI * 2); ctx.fill();
+
+      // Penalty areas (perspective rectangles)
+      function perspRect(gx, gy, gw, gh) {
+        const tl = toScreen(gx, gy);
+        const tr = toScreen(gx + gw, gy);
+        const br = toScreen(gx + gw, gy + gh);
+        const bl = toScreen(gx, gy + gh);
+        ctx.beginPath();
+        ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y);
+        ctx.lineTo(br.x, br.y); ctx.lineTo(bl.x, bl.y);
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      const penW = W * 0.14;
+      const penH = H * 0.56;
+      const penTop = (H - penH) / 2;
+      perspRect(0, penTop, penW, penH);
+      perspRect(W - penW, penTop, penW, penH);
+
+      // Goal areas
+      const gaW = penW * 0.42;
+      const gaH = H * 0.32;
+      const gaTop = (H - gaH) / 2;
+      perspRect(0, gaTop, gaW, gaH);
+      perspRect(W - gaW, gaTop, gaW, gaH);
+
+      // Penalty arcs
+      ctx.beginPath();
+      for (let a = -0.85; a <= 0.85; a += 0.1) {
+        const gx = penW * 0.75 + Math.cos(a) * ccR * 0.55 * (W / H);
+        const gy = H / 2 + Math.sin(a) * ccR * 0.55;
+        const sp = toScreen(gx, gy);
+        if (a <= -0.85) ctx.moveTo(sp.x, sp.y);
+        else ctx.lineTo(sp.x, sp.y);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      for (let a = Math.PI - 0.85; a <= Math.PI + 0.85; a += 0.1) {
+        const gx = W - penW * 0.75 + Math.cos(a) * ccR * 0.55 * (W / H);
+        const gy = H / 2 + Math.sin(a) * ccR * 0.55;
+        const sp = toScreen(gx, gy);
+        if (a <= Math.PI - 0.85) ctx.moveTo(sp.x, sp.y);
+        else ctx.lineTo(sp.x, sp.y);
+      }
+      ctx.stroke();
+
+      // ========== Goals (3D wireframe in perspective) ==========
       const gt = goalTop();
       const gb = goalBottom();
-      const netDepth = GOAL_DEPTH * 2.5;  // deeper nets for 3D effect
-      const netHeight = 40;  // visual height of crossbar above
+      const goalNetW = W * 0.06;   // how far back the net extends in game-x
+      const goalH3d = 25;          // visual height of goal above surface
 
-      // Draw both goals
       [0, 1].forEach(side => {
         const isLeft = side === 0;
-        const goalX = isLeft ? 0 : W;
-        const dir = isLeft ? 1 : -1;
+        const postGX = isLeft ? 0 : W;          // game-x of goal line
+        const backGX = isLeft ? -goalNetW : W + goalNetW;
 
-        // 3D net: perspective lines from posts to back corners
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 0.5;
+        // 4 base corners (on field surface)
+        const ftl = toScreen(postGX, gt);
+        const fbl = toScreen(postGX, gb);
+        const btl = toScreen(backGX, gt);
+        const bbl = toScreen(backGX, gb);
 
-        // Vertical net lines (front to back, with perspective converging)
-        const netSpacing = 10;
-        for (let y = gt; y <= gb; y += netSpacing) {
+        // 4 top corners (raised by goalH3d)
+        const ftlT = { x: ftl.x, y: ftl.y - goalH3d };
+        const fblT = { x: fbl.x, y: fbl.y - goalH3d * 1.1 };
+        const btlT = { x: btl.x, y: btl.y - goalH3d * 0.7 };
+        const bblT = { x: bbl.x, y: bbl.y - goalH3d * 0.8 };
+
+        // Net mesh
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 0.7;
+        ctx.lineCap = 'butt';
+
+        // Side net lines (vertical strips connecting front post to back)
+        const netLines = 6;
+        for (let i = 0; i <= netLines; i++) {
+          const t = i / netLines;
+          // Top bar
+          const tx = ftlT.x + (btlT.x - ftlT.x) * t;
+          const ty = ftlT.y + (btlT.y - ftlT.y) * t;
+          // Bottom bar
+          const bx = ftl.x + (btl.x - ftl.x) * t;
+          const by = ftl.y + (btl.y - ftl.y) * t;
+          ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(bx, by); ctx.stroke();
+
+          // Same for bottom post side
+          const tx2 = fblT.x + (bblT.x - fblT.x) * t;
+          const ty2 = fblT.y + (bblT.y - fblT.y) * t;
+          const bx2 = fbl.x + (bbl.x - fbl.x) * t;
+          const by2 = fbl.y + (bbl.y - fbl.y) * t;
+          ctx.beginPath(); ctx.moveTo(tx2, ty2); ctx.lineTo(bx2, by2); ctx.stroke();
+        }
+
+        // Back net (vertical lines across back)
+        const backLines = 8;
+        for (let i = 0; i <= backLines; i++) {
+          const t = i / backLines;
+          const topX = btlT.x + (bblT.x - btlT.x) * t;
+          const topY = btlT.y + (bblT.y - btlT.y) * t;
+          const botX = btl.x + (bbl.x - btl.x) * t;
+          const botY = btl.y + (bbl.y - btl.y) * t;
+          ctx.beginPath(); ctx.moveTo(topX, topY); ctx.lineTo(botX, botY); ctx.stroke();
+        }
+
+        // Horizontal net lines on back
+        for (let i = 0; i <= 4; i++) {
+          const t = i / 4;
           ctx.beginPath();
-          ctx.moveTo(goalX, y);
-          // Converge slightly toward center at the back
-          const backY = y + (H / 2 - y) * 0.15;
-          ctx.lineTo(goalX + netDepth * dir, backY - netHeight * 0.3);
+          ctx.moveTo(btlT.x + (btl.x - btlT.x) * t, btlT.y + (btl.y - btlT.y) * t);
+          ctx.lineTo(bblT.x + (bbl.x - bblT.x) * t, bblT.y + (bbl.y - bblT.y) * t);
           ctx.stroke();
         }
 
-        // Horizontal net lines (at different depths)
-        for (let d = 0; d <= netDepth; d += netSpacing) {
-          const t = d / netDepth;
-          const x = goalX + d * dir;
-          const topY = gt - netHeight * t * 0.8 + (H / 2 - gt) * t * 0.15;
-          const botY = gb + (H / 2 - gb) * t * 0.15;
-          ctx.beginPath();
-          ctx.moveTo(x, topY);
-          ctx.lineTo(x, botY);
-          ctx.stroke();
+        // Top net (roof)
+        for (let i = 0; i <= backLines; i++) {
+          const t = i / backLines;
+          const fX = ftlT.x + (fblT.x - ftlT.x) * t;
+          const fY = ftlT.y + (fblT.y - ftlT.y) * t;
+          const bX = btlT.x + (bblT.x - btlT.x) * t;
+          const bY = btlT.y + (bblT.y - btlT.y) * t;
+          ctx.beginPath(); ctx.moveTo(fX, fY); ctx.lineTo(bX, bY); ctx.stroke();
         }
 
-        // Top net (crossbar depth lines)
-        for (let d = 0; d <= netDepth; d += netSpacing) {
-          const t = d / netDepth;
-          const x = goalX + d * dir;
-          const topY = gt - netHeight * (1 - t * 0.2);
-          const backTopY = gt - netHeight * t * 0.8 + (H / 2 - gt) * t * 0.15;
-          ctx.beginPath();
-          ctx.moveTo(x, backTopY);
-          ctx.stroke();
-        }
-        // Top horizontal lines connecting across
-        for (let i = 0; i <= 3; i++) {
-          const t = i / 3;
-          const yOff = netHeight * t;
-          ctx.beginPath();
-          ctx.moveTo(goalX, gt - yOff);
-          ctx.lineTo(goalX + netDepth * dir, gt - yOff * 0.3 + (H / 2 - gt) * (netDepth / netDepth) * 0.15);
-          ctx.stroke();
-        }
-
-        // Posts (white)
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(isLeft ? 0 : W - 3, gt - netHeight, 3, gb - gt + netHeight);  // vertical post + crossbar height
+        // Goal frame (thick white posts + crossbar)
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        // Front posts
+        ctx.beginPath(); ctx.moveTo(ftl.x, ftl.y); ctx.lineTo(ftlT.x, ftlT.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fbl.x, fbl.y); ctx.lineTo(fblT.x, fblT.y); ctx.stroke();
         // Crossbar
-        ctx.fillRect(isLeft ? 0 : W - GOAL_DEPTH, gt - netHeight, GOAL_DEPTH, 3);
-        // Bottom post
-        ctx.fillRect(isLeft ? 0 : W - 3, gb, 3, 3);
+        ctx.beginPath(); ctx.moveTo(ftlT.x, ftlT.y); ctx.lineTo(fblT.x, fblT.y); ctx.stroke();
+        // Back posts
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(btl.x, btl.y); ctx.lineTo(btlT.x, btlT.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bbl.x, bbl.y); ctx.lineTo(bblT.x, bblT.y); ctx.stroke();
+        // Back crossbar
+        ctx.beginPath(); ctx.moveTo(btlT.x, btlT.y); ctx.lineTo(bblT.x, bblT.y); ctx.stroke();
+        // Depth bars connecting front to back
+        ctx.beginPath(); ctx.moveTo(ftlT.x, ftlT.y); ctx.lineTo(btlT.x, btlT.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(fblT.x, fblT.y); ctx.lineTo(bblT.x, bblT.y); ctx.stroke();
       });
     }
 
     function drawPaddle(p) {
-      const cx = p.x + p.w / 2;
-      const bodyTop = p.y;
-      const bodyBot = p.y + p.h;
-      const headR = Math.max(5, p.h * 0.12);
-      const bootH = Math.max(3, p.h * 0.08);
-      const bootW = p.w * 1.4;
       const isMatch = gameMode !== 'physics';
-
-      // Get team kit colors
       const team = p.isLeft ? leftTeam : rightTeam;
-      const kit = (isMatch && team && team.data.kit) ? team.data.kit : null;
-      const fallback = isMatch ? '#000' : '#fff';
 
-      // Jersey/shorts split: top 55% jersey, bottom 45% shorts
-      const jerseySplit = p.h * 0.55;
-
-      // Head
-      ctx.fillStyle = kit ? kit.head : fallback;
-      ctx.beginPath();
-      ctx.arc(cx, bodyTop - headR - 1, headR, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Jersey (upper body)
-      ctx.fillStyle = kit ? kit.jersey : fallback;
-      ctx.fillRect(p.x, bodyTop, p.w, jerseySplit);
-
-      // Shorts (lower body)
-      ctx.fillStyle = kit ? kit.shorts : fallback;
-      ctx.fillRect(p.x, bodyTop + jerseySplit, p.w, p.h - jerseySplit);
-
-      // Boots
-      ctx.fillStyle = kit ? kit.boots : fallback;
-      ctx.fillRect(cx - bootW / 2, bodyBot, bootW * 0.4, bootH);
-      ctx.fillRect(cx + bootW * 0.1, bodyBot, bootW * 0.4, bootH);
-
-      // GK glove arm
-      if (p.isGK) {
-        ctx.fillStyle = kit ? kit.jersey : fallback;
-        const armLen = p.w * 1.8;
-        const armY = bodyTop + p.h * 0.25;
-        const armDir = p.isLeft ? 1 : -1;
-        ctx.fillRect(cx, armY, armLen * armDir, p.w * 0.6);
-        // Glove (circle at end)
-        ctx.beginPath();
-        ctx.arc(cx + armLen * armDir, armY + p.w * 0.3, p.w * 0.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Zone-based identity for label
+      // Zone-based identity
       let displayNum, displayName;
       if (p.isGK) {
         displayNum = p.num;
         displayName = p.name;
+      } else if (team) {
+        const identity = getZoneIdentity(p, team.data);
+        displayNum = identity.player.num;
+        displayName = identity.player.name;
       } else {
-        if (team) {
-          const identity = getZoneIdentity(p, team.data);
-          displayNum = identity.player.num;
-          displayName = identity.player.name;
-        } else {
-          displayNum = p.num;
-          displayName = p.name;
-        }
+        displayNum = p.num;
+        displayName = p.name;
       }
 
-      // Label below: #NUM NAME
-      ctx.fillStyle = isMatch ? '#fff' : 'rgba(255,255,255,0.7)';
-      ctx.font = 'bold 9px monospace';
-      if (p.isGK && p.isLeft) {
-        ctx.textAlign = 'left';
-        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, p.x, bodyBot + bootH + 12);
-      } else if (p.isGK && !p.isLeft) {
-        ctx.textAlign = 'right';
-        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, p.x + p.w, bodyBot + bootH + 12);
-      } else {
+      if (!isMatch) {
+        // Physics lab: simple white rectangle
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.font = 'bold 9px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, cx, bodyBot + bootH + 12);
+        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, p.x + p.w / 2, p.y + p.h + 14);
+        return;
       }
+
+      // ===== Match mode: 3D block paddle in perspective =====
+      const kit = (team && team.data.kit) ? team.data.kit : null;
+      const teamColor = kit ? kit.jersey : '#fff';
+      const blockH = 20;  // visual height of 3D block above surface
+
+      // Paddle game-space corners
+      const gx1 = p.x, gx2 = p.x + p.w;
+      const gy1 = p.y, gy2 = p.y + p.h;
+
+      // Map to screen perspective
+      const tl = _toScreen(gx1, gy1);
+      const tr = _toScreen(gx2, gy1);
+      const br = _toScreen(gx2, gy2);
+      const bl = _toScreen(gx1, gy2);
+
+      // Top face (raised by blockH)
+      const scale = _perspScale(gy1);
+      const bh = blockH * scale;
+      const tlT = { x: tl.x, y: tl.y - bh };
+      const trT = { x: tr.x, y: tr.y - bh };
+      const brT = { x: br.x, y: br.y - bh * (_perspScale(gy2) / scale) };
+      const blT = { x: bl.x, y: bl.y - bh * (_perspScale(gy2) / scale) };
+
+      // Front face (bottom edge, visible because we look from below)
+      ctx.fillStyle = darkenColor(teamColor, 0.6);
+      ctx.beginPath();
+      ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y);
+      ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Right side face
+      ctx.fillStyle = darkenColor(teamColor, 0.75);
+      ctx.beginPath();
+      ctx.moveTo(tr.x, tr.y); ctx.lineTo(br.x, br.y);
+      ctx.lineTo(brT.x, brT.y); ctx.lineTo(trT.x, trT.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Top face (team color)
+      ctx.fillStyle = teamColor;
+      ctx.beginPath();
+      ctx.moveTo(tlT.x, tlT.y); ctx.lineTo(trT.x, trT.y);
+      ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Outline
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tlT.x, tlT.y); ctx.lineTo(trT.x, trT.y);
+      ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Label below block: #NUM NAME
+      const fontSize = Math.max(7, Math.round(9 * scale));
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.font = `bold ${fontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const labelY = Math.max(bl.y, br.y) + 4;
+      ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, (bl.x + br.x) / 2, labelY);
+    }
+
+    function darkenColor(hex, factor) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgb(${Math.round(r * factor)},${Math.round(g * factor)},${Math.round(b * factor)})`;
     }
 
     function drawBall() {
       if (goalPause > 0) return;
       const zPx = ball.z;
-      const zScale = 1 + zPx / 300;
-      const drawSize = ball.size * zScale;
       const isMatch = gameMode !== 'physics';
-      const ballColor = '#fff';
 
-      // Ground shadow when airborne
-      if (zPx > 2) {
-        const shadowAlpha = Math.max(0.04, 0.2 - zPx / 500);
-        const shadowSpread = 1 + zPx / 50;
-        ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
-        const sw = ball.size * shadowSpread;
-        const sh = ball.size * shadowSpread * 0.4;
+      if (!isMatch) {
+        // Physics lab: simple outline circle
+        const zScale = 1 + zPx / 300;
+        const drawSize = ball.size * zScale;
+        if (zPx > 2) {
+          const shadowAlpha = Math.max(0.04, 0.2 - zPx / 500);
+          const shadowSpread = 1 + zPx / 50;
+          ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
+          const sw = ball.size * shadowSpread;
+          const sh = ball.size * shadowSpread * 0.4;
+          ctx.beginPath();
+          ctx.ellipse(ball.x, ball.y + zPx * 0.12, sw / 2, sh / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.ellipse(ball.x, ball.y + zPx * 0.12, sw / 2, sh / 2, 0, 0, Math.PI * 2);
+        ctx.arc(ball.x, ball.y - zPx, drawSize / 2, 0, Math.PI * 2);
+        ctx.stroke();
+        return;
+      }
+
+      // Match mode: perspective ball
+      const sp = _toScreen(ball.x, ball.y);
+      const scale = _perspScale(ball.y);
+      const drawR = ball.size * scale * (1 + zPx / 300);
+
+      // Ground shadow
+      if (zPx > 2) {
+        const shadowAlpha = Math.max(0.05, 0.25 - zPx / 400);
+        ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y, drawR * 1.2, drawR * 0.5, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Ball: outline circle
-      ctx.strokeStyle = ballColor;
+      // Ball (filled white with outline for retro look)
+      const bx = sp.x;
+      const by = sp.y - zPx * scale;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(bx, by, drawR * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(ball.x, ball.y - zPx, drawSize / 2, 0, Math.PI * 2);
+      ctx.arc(bx, by, drawR * 0.6, 0, Math.PI * 2);
       ctx.stroke();
     }
 
     function drawHUD() {
       const isMatch = gameMode !== 'physics';
-      const fg = isMatch ? '#000' : '#fff';
-      const fgAlpha = isMatch ? 'rgba(0,0,0,' : 'rgba(255,255,255,';
+      const fg = '#fff';
+      const fgAlpha = 'rgba(255,255,255,';
 
       // Hold timer
       if (ballState === 'held_player' && holdPaddle) {
@@ -1010,10 +1270,10 @@
     function drawScoreboard() {
       const isMatch = gameMode !== 'physics';
       ctx.font = 'bold 13px monospace';
-      ctx.fillStyle = isMatch ? '#fff' : TEAM_LEFT.primary;
+      ctx.fillStyle = isMatch ? TEAM_LEFT.primary : TEAM_LEFT.primary;
       ctx.textAlign = 'right';
       ctx.fillText(TEAM_LEFT.short, W / 2 - 45, 48);
-      ctx.fillStyle = isMatch ? '#fff' : TEAM_RIGHT.primary;
+      ctx.fillStyle = isMatch ? TEAM_RIGHT.primary : TEAM_RIGHT.primary;
       ctx.textAlign = 'left';
       ctx.fillText(TEAM_RIGHT.short, W / 2 + 45, 48);
       ctx.fillStyle = '#fff';
@@ -1099,40 +1359,95 @@
     // ═══════════════════════════════
     // ─── ITALIA '90 LOGO (drawn programmatically) ───
     function drawLogo() {
-      const x = 20, y = 18;
-      const s = 0.7;  // scale
+      const x = 12, y = 10;
+      const s = 0.55;  // scale
 
-      // Ball shape
       ctx.save();
-      ctx.translate(x + 30 * s, y + 25 * s);
+      ctx.translate(x, y);
       ctx.scale(s, s);
 
-      // Ball circle
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, 20, 0, Math.PI * 2);
-      ctx.stroke();
+      // Stylized deconstructed football — Italia '90 official logo
+      // The ball is made of separated black pentagon/wedge shapes with green and red accents
 
-      // Pentagon patches (simplified)
-      ctx.fillStyle = '#fff';
+      const cx = 40, cy = 38;  // ball center
+
+      // Top-left wedge (green accent behind, black on top)
+      ctx.fillStyle = '#009246';
       ctx.beginPath();
-      ctx.moveTo(-5, -8); ctx.lineTo(5, -8); ctx.lineTo(7, -1); ctx.lineTo(0, 4); ctx.lineTo(-7, -1);
+      ctx.moveTo(cx - 18, cy - 28); ctx.lineTo(cx - 8, cy - 18);
+      ctx.lineTo(cx - 16, cy - 8); ctx.lineTo(cx - 26, cy - 16);
       ctx.closePath(); ctx.fill();
 
-      // Italian flag colors on ball
-      ctx.fillStyle = '#009246';
-      ctx.beginPath(); ctx.moveTo(-18, -8); ctx.lineTo(-12, -6); ctx.lineTo(-14, 2); ctx.lineTo(-19, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#3a3a3a';
+      ctx.beginPath();
+      ctx.moveTo(cx - 12, cy - 30); ctx.lineTo(cx - 2, cy - 22);
+      ctx.lineTo(cx - 8, cy - 12); ctx.lineTo(cx - 20, cy - 18);
+      ctx.closePath(); ctx.fill();
+
+      // Top-right wedge (red accent behind, black on top)
       ctx.fillStyle = '#CE2B37';
-      ctx.beginPath(); ctx.moveTo(18, -8); ctx.lineTo(12, -6); ctx.lineTo(14, 2); ctx.lineTo(19, 0); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx + 20, cy - 24); ctx.lineTo(cx + 28, cy - 14);
+      ctx.lineTo(cx + 18, cy - 8); ctx.lineTo(cx + 12, cy - 18);
+      ctx.closePath(); ctx.fill();
+
+      ctx.fillStyle = '#3a3a3a';
+      ctx.beginPath();
+      ctx.moveTo(cx + 6, cy - 28); ctx.lineTo(cx + 16, cy - 26);
+      ctx.lineTo(cx + 22, cy - 16); ctx.lineTo(cx + 10, cy - 14);
+      ctx.closePath(); ctx.fill();
+
+      // Bottom-left wedge (green accent, black)
+      ctx.fillStyle = '#009246';
+      ctx.beginPath();
+      ctx.moveTo(cx - 26, cy + 2); ctx.lineTo(cx - 16, cy - 4);
+      ctx.lineTo(cx - 6, cy + 6); ctx.lineTo(cx - 14, cy + 16);
+      ctx.closePath(); ctx.fill();
+
+      ctx.fillStyle = '#3a3a3a';
+      ctx.beginPath();
+      ctx.moveTo(cx - 20, cy - 2); ctx.lineTo(cx - 10, cy - 6);
+      ctx.lineTo(cx - 2, cy + 4); ctx.lineTo(cx - 10, cy + 12);
+      ctx.closePath(); ctx.fill();
+
+      // Center pentagon (green accent behind, black)
+      ctx.fillStyle = '#009246';
+      ctx.beginPath();
+      ctx.moveTo(cx - 2, cy + 2); ctx.lineTo(cx + 10, cy - 4);
+      ctx.lineTo(cx + 16, cy + 6); ctx.lineTo(cx + 10, cy + 16);
+      ctx.lineTo(cx, cy + 14);
+      ctx.closePath(); ctx.fill();
+
+      ctx.fillStyle = '#3a3a3a';
+      ctx.beginPath();
+      ctx.moveTo(cx + 2, cy); ctx.lineTo(cx + 12, cy - 6);
+      ctx.lineTo(cx + 20, cy + 4); ctx.lineTo(cx + 14, cy + 14);
+      ctx.lineTo(cx + 4, cy + 12);
+      ctx.closePath(); ctx.fill();
+
+      // Small red accent bottom-right
+      ctx.fillStyle = '#CE2B37';
+      ctx.beginPath();
+      ctx.moveTo(cx + 22, cy + 6); ctx.lineTo(cx + 26, cy + 2);
+      ctx.lineTo(cx + 24, cy + 10); ctx.lineTo(cx + 20, cy + 10);
+      ctx.closePath(); ctx.fill();
+
+      // Motion lines under ball
+      ctx.strokeStyle = '#3a3a3a';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx - 6, cy + 22); ctx.quadraticCurveTo(cx, cy + 20, cx + 6, cy + 22); ctx.stroke();
+      ctx.strokeStyle = '#CE2B37';
+      ctx.beginPath(); ctx.moveTo(cx - 8, cy + 27); ctx.quadraticCurveTo(cx, cy + 24, cx + 8, cy + 27); ctx.stroke();
+
+      // "ITALIA'90" text in angular style
+      ctx.fillStyle = '#3a3a3a';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.letterSpacing = '2px';
+      ctx.fillText("ITALIA'90", cx, cy + 46);
 
       ctx.restore();
-
-      // Text
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${11 * s}px monospace`;
-      ctx.textAlign = 'center';
-      ctx.fillText('ITALIA\'90', x + 30 * s, y + 52 * s);
     }
 
     function render() {
