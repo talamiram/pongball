@@ -245,6 +245,12 @@ The outer edge of the playing field should have a **subtle neon border glow** �
 
 When a match starts (player selects Match Mode or Physics Lab from menu), play a brief **zoom-in cutscene** before gameplay begins. The reference image is the PONGBALL Italia '90 arcade coffee table — black body, white PONG-style logo, Italian flag stripe detail, neon LED border strips on the playing surface, glass top.
 
+**Visual references are in `Visual References/` folder:**
+- `Table_Look.png` — THE target aesthetic. Match this exactly for the opening shot.
+- `Table_Opening_Zoom.mp4` — Reference for the zoom-in animation.
+- `1990_FIFA_World_Cup.svg.png` — Italia 90 World Cup logo.
+- `Logo_Italy_National_Football_Team_-_2023.svg.png` — Italy team crest.
+
 ### The Sequence
 
 1. **3D table view (~1s):** Show the arcade table from an angled perspective — like looking at a coffee table from a seated position. This is a **CSS 3D transform or canvas fake-perspective** of the playing surface: the field is drawn as a trapezoid (narrower at top, wider at bottom) with the neon border glow visible, the "PONGBALL" branding, and the dark glass surface. Paddles are in starting positions. The table body (black rectangle with legs) frames the playing surface. This should feel like a physical object in a room.
