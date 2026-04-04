@@ -1513,16 +1513,28 @@
       const scoreY = tl.y - 20;
       ctx.textAlign = 'center';
 
-      ctx.font = 'bold 12px monospace';
-      ctx.shadowBlur = 6;
+      // Get current player identities
+      const leftId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
+      const rightId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
+
+      // Left team: short code + player name
+      ctx.font = 'bold 13px monospace';
+      ctx.shadowBlur = 8;
       ctx.shadowColor = TEAM_LEFT.primary;
       ctx.fillStyle = TEAM_LEFT.primary;
-      ctx.fillText(TEAM_LEFT.short, W / 2 - 50, scoreY);
+      ctx.textAlign = 'right';
+      const leftLabel = leftId ? `${TEAM_LEFT.short}  #${leftId.player.num} ${leftId.player.name.toUpperCase()}` : TEAM_LEFT.short;
+      ctx.fillText(leftLabel, W / 2 - 45, scoreY);
 
+      // Right team: player name + short code
       ctx.shadowColor = TEAM_RIGHT.primary;
       ctx.fillStyle = TEAM_RIGHT.primary;
-      ctx.fillText(TEAM_RIGHT.short, W / 2 + 50, scoreY);
+      ctx.textAlign = 'left';
+      const rightLabel = rightId ? `${rightId.player.name.toUpperCase()} #${rightId.player.num}  ${TEAM_RIGHT.short}` : TEAM_RIGHT.short;
+      ctx.fillText(rightLabel, W / 2 + 45, scoreY);
 
+      // Score — large glowing white
+      ctx.textAlign = 'center';
       ctx.shadowColor = '#fff';
       ctx.shadowBlur = 10;
       ctx.fillStyle = '#fff';
