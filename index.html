@@ -131,6 +131,11 @@
     let holdTimer = 0;
     let goalPause = 0;
 
+    // Net rattle state
+    let netRattleLeft = 0;   // remaining rattle time (seconds)
+    let netRattleRight = 0;
+    let netRattleSeed = 0;   // randomize rattle pattern per goal
+
     let playerVelY = 0;
     let playerPrevY = 0;
 
@@ -608,11 +613,13 @@
         // Goal scoring
         if (ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
           scoreR++;
+          netRattleLeft = 1.2; netRattleSeed = Math.random() * 1000;
           resetAfterGoal(true);
           return;
         }
         if (ball.x + ball.size / 2 > goalLineR && ball.y > gt && ball.y < gb) {
           scoreL++;
+          netRattleRight = 1.2; netRattleSeed = Math.random() * 1000;
           lastShotMaxZ = currentMaxZ;
           resetAfterGoal(false);
           return;
@@ -671,6 +678,10 @@
 
       // ── AI movement ──
       if (aiPad) aiPaddle(aiPad, dt);
+
+      // Decay net rattle
+      if (netRattleLeft > 0) netRattleLeft = Math.max(0, netRattleLeft - dt);
+      if (netRattleRight > 0) netRattleRight = Math.max(0, netRattleRight - dt);
 
       if (goalPause > 0) { goalPause -= dt; return; }
 
@@ -796,6 +807,123 @@
       ctx.stroke();
 
       ctx.restore();
+    }
+
+    // ─── GOAL NETS (flat 2D mode) ───
+    function drawNets() {
+      const gt = goalTop(), gb = goalBottom();
+      const glL = W * GOAL_LINE_RATIO;
+      const glR = W * (1 - GOAL_LINE_RATIO);
+      const netDepth = GOAL_DEPTH;
+      const netLines = 6;  // horizontal strings
+      const netVLines = 4; // vertical strings
+
+      [
+        { x: glL, dir: -1, rattle: netRattleLeft },
+        { x: glR, dir: 1, rattle: netRattleRight }
+      ].forEach(({ x, dir, rattle }) => {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1;
+
+        const intensity = rattle / 1.2;  // 1.0 at start, decays to 0
+        const freq = 18 + netRattleSeed % 10;
+
+        for (let i = 0; i <= netLines; i++) {
+          const t = i / netLines;
+          const ny = gt + t * (gb - gt);
+          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 4;
+          ctx.beginPath();
+          ctx.moveTo(x, ny);
+          ctx.lineTo(x - dir * netDepth + shake, ny + shake * 0.3);
+          ctx.stroke();
+        }
+        for (let i = 0; i <= netVLines; i++) {
+          const t = i / netVLines;
+          const nx = x - dir * netDepth * t;
+          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 3.2 + netRattleSeed) * 3 * t;
+          ctx.beginPath();
+          ctx.moveTo(nx + shake, gt + shake * 0.2);
+          ctx.lineTo(nx + shake, gb + shake * 0.2);
+          ctx.stroke();
+        }
+
+        // Brighter net when rattling
+        if (rattle > 0) {
+          ctx.strokeStyle = `rgba(255,255,255,${intensity * 0.3})`;
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 8 * intensity;
+          for (let i = 0; i <= netLines; i++) {
+            const t = i / netLines;
+            const ny = gt + t * (gb - gt);
+            const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 6;
+            ctx.beginPath();
+            ctx.moveTo(x, ny);
+            ctx.lineTo(x - dir * netDepth + shake, ny + shake * 0.3);
+            ctx.stroke();
+          }
+        }
+
+        ctx.restore();
+      });
+    }
+
+    // ─── GOAL NETS (3D projected) ───
+    function drawNets3D() {
+      const gt = goalTop(), gb = goalBottom();
+      const glL = W * GOAL_LINE_RATIO;
+      const glR = W * (1 - GOAL_LINE_RATIO);
+      const netDepth = GOAL_DEPTH;
+      const netLines = 6;
+      const netVLines = 4;
+
+      [
+        { x: glL, dir: -1, rattle: netRattleLeft },
+        { x: glR, dir: 1, rattle: netRattleRight }
+      ].forEach(({ x, dir, rattle }) => {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1;
+
+        const intensity = rattle / 1.2;
+        const freq = 18 + netRattleSeed % 10;
+
+        // Horizontal net strings
+        for (let i = 0; i <= netLines; i++) {
+          const t = i / netLines;
+          const ny = gt + t * (gb - gt);
+          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 4;
+          const p1 = project3D(x, ny, 0);
+          const p2 = project3D(x - dir * netDepth + shake, ny + shake * 0.3, 0);
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        }
+        // Vertical net strings
+        for (let i = 0; i <= netVLines; i++) {
+          const t = i / netVLines;
+          const nx = x - dir * netDepth * t;
+          const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 3.2 + netRattleSeed) * 3 * t;
+          const p1 = project3D(nx + shake, gt + shake * 0.2, 0);
+          const p2 = project3D(nx + shake, gb + shake * 0.2, 0);
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        }
+
+        // Brighter glow when rattling
+        if (rattle > 0) {
+          ctx.strokeStyle = `rgba(255,255,255,${intensity * 0.35})`;
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 8 * intensity;
+          for (let i = 0; i <= netLines; i++) {
+            const t = i / netLines;
+            const ny = gt + t * (gb - gt);
+            const shake = intensity * Math.sin((performance.now() / 1000) * freq + i * 2.5 + netRattleSeed) * 6;
+            const p1 = project3D(x, ny, 0);
+            const p2 = project3D(x - dir * netDepth + shake, ny + shake * 0.3, 0);
+            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+          }
+        }
+
+        ctx.restore();
+      });
     }
 
     // ─── NEON PADDLE ───
@@ -1039,6 +1167,7 @@
     //  RENDER (match or physics)
     function render() {
       drawField();
+      drawNets();
       allPaddles.forEach(drawPaddle);
       drawBall();
       drawHUD();
@@ -1407,6 +1536,9 @@
       ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
 
       ctx.restore();
+
+      // ─── Goal nets (projected) ───
+      drawNets3D();
 
       // ─── Paddles (projected) ───
       allPaddles.forEach(p => {
