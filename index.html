@@ -1879,7 +1879,7 @@
         const bz = ball.z;
         const ballLift = ball.size * 0.7;  // ball sits above table surface
         const bp = project3D(ball.x, ball.y, bz + ballLift);
-        const r = (ball.size / 2) * bp.scale * 3.2 * (1 + bz / 300);
+        const r = (ball.size / 2) * bp.scale * 2.5 * (1 + bz / 300);
 
         // Ground shadow
         const gp = project3D(ball.x, ball.y, 0);
@@ -1889,13 +1889,13 @@
         ctx.ellipse(gp.x, gp.y, r * 1.4, r * 0.4, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Ball trail (neon dots)
+        // Ball trail (minimal)
         for (let i = 0; i < ballTrail.length; i++) {
           const t = ballTrail[i];
           const tz = bz * (i / ballTrail.length);
           const tp = project3D(t.x, t.y, tz + ballLift);
-          const alpha = (i / ballTrail.length) * 0.3;
-          const tr = r * (0.3 + (i / ballTrail.length) * 0.5);
+          const alpha = (i / ballTrail.length) * 0.1;
+          const tr = r * (0.2 + (i / ballTrail.length) * 0.3);
           ctx.fillStyle = `rgba(255,255,255,${alpha})`;
           ctx.beginPath();
           ctx.arc(tp.x, tp.y, tr, 0, Math.PI * 2);
