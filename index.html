@@ -1586,89 +1586,114 @@
         ctx.restore();
       });
 
-      // ─── Ball (3D cube, projected) ───
+      // ─── Ball (3D neon football, projected) ───
       if (goalPause <= 0 && ball) {
-        const bSize = ball.size * 1.8 * (1 + ball.z / 400);  // cube half-size in game-space
         const bz = ball.z;
-        const cubeH = bSize * 2.2;  // cube height in z-axis
+        const ballLift = ball.size * 0.7;  // ball sits above table surface
+        const bp = project3D(ball.x, ball.y, bz + ballLift);
+        const r = (ball.size / 2) * bp.scale * 3.2 * (1 + bz / 300);
 
-        // Ground shadow when airborne
-        if (bz > 2) {
-          const gp = project3D(ball.x, ball.y, 0);
-          const shadowAlpha = Math.max(0.05, 0.18 - bz / 400);
-          const sr = bSize * gp.scale * 1.5;
-          ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
-          ctx.beginPath();
-          ctx.ellipse(gp.x, gp.y, sr * 1.8, sr * 0.5, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        // Ground shadow
+        const gp = project3D(ball.x, ball.y, 0);
+        const shadowAlpha = bz > 2 ? Math.max(0.06, 0.2 - bz / 400) : 0.2;
+        ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
+        ctx.beginPath();
+        ctx.ellipse(gp.x, gp.y, r * 1.4, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
 
-        // Ball trail (small fading cubes)
+        // Ball trail (neon dots)
         for (let i = 0; i < ballTrail.length; i++) {
           const t = ballTrail[i];
           const tz = bz * (i / ballTrail.length);
-          const tp = project3D(t.x, t.y, tz + cubeH / 2);
-          const alpha = (i / ballTrail.length) * 0.2;
-          const tr = bSize * tp.scale * (0.3 + (i / ballTrail.length) * 0.4);
+          const tp = project3D(t.x, t.y, tz + ballLift);
+          const alpha = (i / ballTrail.length) * 0.3;
+          const tr = r * (0.3 + (i / ballTrail.length) * 0.5);
           ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-          ctx.fillRect(tp.x - tr, tp.y - tr, tr * 2, tr * 2);
+          ctx.beginPath();
+          ctx.arc(tp.x, tp.y, tr, 0, Math.PI * 2);
+          ctx.fill();
         }
-
-        // Project cube corners
-        const cb0 = project3D(ball.x - bSize, ball.y - bSize, bz);
-        const cb1 = project3D(ball.x + bSize, ball.y - bSize, bz);
-        const cb2 = project3D(ball.x + bSize, ball.y + bSize, bz);
-        const cb3 = project3D(ball.x - bSize, ball.y + bSize, bz);
-        const ct0 = project3D(ball.x - bSize, ball.y - bSize, bz + cubeH);
-        const ct1 = project3D(ball.x + bSize, ball.y - bSize, bz + cubeH);
-        const ct2 = project3D(ball.x + bSize, ball.y + bSize, bz + cubeH);
-        const ct3 = project3D(ball.x - bSize, ball.y + bSize, bz + cubeH);
 
         ctx.save();
 
-        // Front face (bottom edge facing viewer)
+        // ── Neon glow (outer, like 2D version) ──
         ctx.shadowColor = '#88ddff';
-        ctx.shadowBlur = 14;
-        ctx.fillStyle = 'rgba(200,230,255,0.5)';
+        ctx.shadowBlur = 22 * bp.scale;
+        ctx.fillStyle = 'rgba(136,221,255,0.15)';
         ctx.beginPath();
-        ctx.moveTo(cb2.x, cb2.y); ctx.lineTo(cb3.x, cb3.y);
-        ctx.lineTo(ct3.x, ct3.y); ctx.lineTo(ct2.x, ct2.y);
-        ctx.closePath();
+        ctx.arc(bp.x, bp.y, r * 1.15, 0, Math.PI * 2);
         ctx.fill();
 
-        // Right side face
-        ctx.fillStyle = 'rgba(180,210,240,0.35)';
-        ctx.beginPath();
-        ctx.moveTo(cb1.x, cb1.y); ctx.lineTo(cb2.x, cb2.y);
-        ctx.lineTo(ct2.x, ct2.y); ctx.lineTo(ct1.x, ct1.y);
-        ctx.closePath();
-        ctx.fill();
+        // ── Main ball body — white sphere with 3D gradient ──
+        const grad = ctx.createRadialGradient(
+          bp.x - r * 0.25, bp.y - r * 0.3, r * 0.05,
+          bp.x + r * 0.1, bp.y + r * 0.1, r
+        );
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.4, '#f0f0f0');
+        grad.addColorStop(0.7, '#cccccc');
+        grad.addColorStop(1, '#888888');
 
-        // Left side face
-        ctx.beginPath();
-        ctx.moveTo(cb0.x, cb0.y); ctx.lineTo(cb3.x, cb3.y);
-        ctx.lineTo(ct3.x, ct3.y); ctx.lineTo(ct0.x, ct0.y);
-        ctx.closePath();
-        ctx.fill();
-
-        // Top face (brightest — the main visible surface)
         ctx.shadowColor = '#fff';
-        ctx.shadowBlur = 20;
-        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 16 * bp.scale;
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.moveTo(ct0.x, ct0.y); ctx.lineTo(ct1.x, ct1.y);
-        ctx.lineTo(ct2.x, ct2.y); ctx.lineTo(ct3.x, ct3.y);
-        ctx.closePath();
+        ctx.arc(bp.x, bp.y, r, 0, Math.PI * 2);
         ctx.fill();
 
-        // Second glow pass for intensity
-        ctx.shadowColor = '#88ddff';
-        ctx.shadowBlur = 25;
-        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        // ── Football panel pattern ──
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(40,40,40,0.4)';
+        ctx.lineWidth = Math.max(0.5, 1.0 * bp.scale);
+
+        // Center pentagon (dark patch)
+        const pentR = r * 0.32;
+        ctx.fillStyle = 'rgba(30,30,30,0.4)';
         ctx.beginPath();
-        ctx.moveTo(ct0.x, ct0.y); ctx.lineTo(ct1.x, ct1.y);
-        ctx.lineTo(ct2.x, ct2.y); ctx.lineTo(ct3.x, ct3.y);
+        for (let i = 0; i < 5; i++) {
+          const a = (i * 2 * Math.PI / 5) - Math.PI / 2;
+          const px = bp.x + Math.cos(a) * pentR;
+          const py = bp.y + Math.sin(a) * pentR * 0.85;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
         ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Seam lines from pentagon to edge
+        for (let i = 0; i < 5; i++) {
+          const a = (i * 2 * Math.PI / 5) - Math.PI / 2;
+          const ix = bp.x + Math.cos(a) * pentR;
+          const iy = bp.y + Math.sin(a) * pentR * 0.85;
+          const ox = bp.x + Math.cos(a) * r * 0.8;
+          const oy = bp.y + Math.sin(a) * r * 0.8 * 0.85;
+          ctx.beginPath();
+          ctx.moveTo(ix, iy);
+          ctx.lineTo(ox, oy);
+          ctx.stroke();
+        }
+
+        // ── Second neon glow pass (cyan, like 2D) ──
+        ctx.shadowColor = '#88ddff';
+        ctx.shadowBlur = 28 * bp.scale;
+        ctx.strokeStyle = 'rgba(136,221,255,0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(bp.x, bp.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // ── Specular highlight (top-left shine) ──
+        const specGrad = ctx.createRadialGradient(
+          bp.x - r * 0.3, bp.y - r * 0.35, 0,
+          bp.x - r * 0.3, bp.y - r * 0.35, r * 0.55
+        );
+        specGrad.addColorStop(0, 'rgba(255,255,255,0.8)');
+        specGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = specGrad;
+        ctx.beginPath();
+        ctx.arc(bp.x, bp.y, r, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
