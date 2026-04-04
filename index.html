@@ -774,8 +774,17 @@
     // ─── DRAW FIELD ───
     function drawField() {
       // White background for match mode
-      ctx.fillStyle = gameMode === 'physics' ? '#0a1f0a' : '#fff';
+      ctx.fillStyle = gameMode === 'physics' ? '#0a1f0a' : '#4a8c3f';
       ctx.fillRect(0, 0, W, H);
+
+      // Grass stripes in match mode
+      if (gameMode !== 'physics') {
+        const stripeW = W / 12;
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        for (let i = 0; i < 12; i += 2) {
+          ctx.fillRect(i * stripeW, 0, stripeW, H);
+        }
+      }
 
       if (gameMode === 'physics') {
         // Physics lab: keep the green field look
@@ -801,7 +810,7 @@
         const dir = isLeft ? 1 : -1;
 
         // 3D net: perspective lines from posts to back corners
-        ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
         ctx.lineWidth = 0.5;
 
         // Vertical net lines (front to back, with perspective converging)
@@ -847,8 +856,8 @@
           ctx.stroke();
         }
 
-        // Posts (solid black)
-        ctx.fillStyle = '#000';
+        // Posts (white)
+        ctx.fillStyle = '#fff';
         ctx.fillRect(isLeft ? 0 : W - 3, gt - netHeight, 3, gb - gt + netHeight);  // vertical post + crossbar height
         // Crossbar
         ctx.fillRect(isLeft ? 0 : W - GOAL_DEPTH, gt - netHeight, GOAL_DEPTH, 3);
@@ -923,7 +932,7 @@
       }
 
       // Label below: #NUM NAME
-      ctx.fillStyle = isMatch ? '#333' : 'rgba(255,255,255,0.7)';
+      ctx.fillStyle = isMatch ? '#fff' : 'rgba(255,255,255,0.7)';
       ctx.font = 'bold 9px monospace';
       if (p.isGK && p.isLeft) {
         ctx.textAlign = 'left';
@@ -943,13 +952,13 @@
       const zScale = 1 + zPx / 300;
       const drawSize = ball.size * zScale;
       const isMatch = gameMode !== 'physics';
-      const ballColor = isMatch ? '#000' : '#fff';
+      const ballColor = '#fff';
 
       // Ground shadow when airborne
       if (zPx > 2) {
         const shadowAlpha = Math.max(0.04, 0.2 - zPx / 500);
         const shadowSpread = 1 + zPx / 50;
-        ctx.fillStyle = isMatch ? `rgba(0,0,0,${shadowAlpha})` : `rgba(255,255,255,${shadowAlpha})`;
+        ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
         const sw = ball.size * shadowSpread;
         const sh = ball.size * shadowSpread * 0.4;
         ctx.beginPath();
@@ -1001,13 +1010,13 @@
     function drawScoreboard() {
       const isMatch = gameMode !== 'physics';
       ctx.font = 'bold 13px monospace';
-      ctx.fillStyle = isMatch ? '#000' : TEAM_LEFT.primary;
+      ctx.fillStyle = isMatch ? '#fff' : TEAM_LEFT.primary;
       ctx.textAlign = 'right';
       ctx.fillText(TEAM_LEFT.short, W / 2 - 45, 48);
-      ctx.fillStyle = isMatch ? '#000' : TEAM_RIGHT.primary;
+      ctx.fillStyle = isMatch ? '#fff' : TEAM_RIGHT.primary;
       ctx.textAlign = 'left';
       ctx.fillText(TEAM_RIGHT.short, W / 2 + 45, 48);
-      ctx.fillStyle = isMatch ? '#000' : '#fff';
+      ctx.fillStyle = '#fff';
       ctx.font = 'bold 28px monospace';
       ctx.textAlign = 'center';
       ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, 50);
@@ -1099,14 +1108,14 @@
       ctx.scale(s, s);
 
       // Ball circle
-      ctx.strokeStyle = '#000';
+      ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, 0, 20, 0, Math.PI * 2);
       ctx.stroke();
 
       // Pentagon patches (simplified)
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = '#fff';
       ctx.beginPath();
       ctx.moveTo(-5, -8); ctx.lineTo(5, -8); ctx.lineTo(7, -1); ctx.lineTo(0, 4); ctx.lineTo(-7, -1);
       ctx.closePath(); ctx.fill();
@@ -1120,7 +1129,7 @@
       ctx.restore();
 
       // Text
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = '#fff';
       ctx.font = `bold ${11 * s}px monospace`;
       ctx.textAlign = 'center';
       ctx.fillText('ITALIA\'90', x + 30 * s, y + 52 * s);
