@@ -19,12 +19,20 @@
 
 ## Core Concept
 
-Pong, but football. Two teams of 11 players each in a **4-4-2 formation grid**. Each player is a small vertical paddle. The ball bounces off every paddle as it weaves through the formation. One player is human-controlled (Maradona); the rest are AI.
+Pong, but football. **One paddle per team** that moves freely around its half. The paddle's identity (name, number, neon color) changes based on its position zone — in the box you're the keeper, in defense you're Ruggeri, in midfield you're Burruchaga, up front you're Maradona.
 
-There are **two core shot mechanics**:
+**Without Space:** Ball bounces off your paddle. Normal Pong deflection — angle depends on where the ball hits (center = straight, edge = steep). Works the same in every zone.
 
-1. **Catch and release**: Let the ball hit your paddle (no Space) → it's trapped. Aim with arrows, release with Space. Hold Space longer to lob higher.
-2. **Volley / first-time shot**: Hold Space AS the ball arrives → immediate hard shot, no catch. Aim with arrows at the moment of contact. Hold duration before contact controls lob height.
+**With Space:** Zone-specific signature move, each with a risk/reward "too much" punishment:
+
+| Zone | Identity | Space Action | Risk (too much) |
+|---|---|---|---|
+| **Box** (goal area) | Goycochea | **Catch & hold** — aim with arrows, release to distribute | Stuck holding, opponent pressures |
+| **DEF** | Ruggeri, etc. | **Lob clearance** — launches high and long, arrows control direction | Hold too long → comically high, wastes time |
+| **MID** | Burruchaga, etc. | **Curving shot** — ball curves in arrow direction at the end | Too much arrow → curves out of bounds or misses |
+| **FWD** | Maradona, etc. | **Power blast** — upper corner rocket, Space = power | Hold too long → ball goes over the bar |
+
+The core tactical tension: push forward for better attacks but leave your goal exposed. Hang back to defend but you can't score. Read the play, choose your position.
 
 **Goal posts** define a goal mouth (30% of screen height, centered). Ball must enter the goal mouth to score — including lobbed balls that fly in. Shots that miss hit the post or wall and bounce back.
 
@@ -34,13 +42,12 @@ There are **two core shot mechanics**:
 
 | Input | Action |
 |---|---|
-| Arrow keys (up/down) | Move controlled paddle vertically + aim volleys |
-| Arrow keys (left/right) | Move controlled paddle horizontally (outfield only) |
-| Space (tap + release) | Flat shot / flat pass along the ground |
-| Space (hold + release) | Lob — longer hold = higher ball. Speed stays constant. |
-| Space held on contact | **Volley** — first-time shot, directed by arrows, no catch |
+| Arrow keys (up/down) | Move paddle vertically |
+| Arrow keys (left/right) | Move paddle horizontally (free movement within your half) |
+| Space (no ball contact) | Pre-charge for zone ability |
+| Space (on contact) | Triggers zone-specific move (see table above) |
 
-**Control switching:** When ball is on your GK (serve state), arrow keys move the GK up/down to aim the serve. The instant Space is released (serve happens), control switches back to your forward (Maradona).
+**No control switching.** You control one paddle at all times. When you enter the box, the paddle shifts to keeper neon color — that's your visual cue that Space = catch.
 
 ---
 
@@ -64,46 +71,33 @@ This creates real tactical depth: flat shots are fast but must thread through th
 ## Ball State Machine
 
 ```
-on_gk → (Space release) → live
-live → (hits player's mainFwd, Space NOT held) → held_player
-live → (hits player's mainFwd, Space IS held) → live (VOLLEY — immediate shot)
-live → (hits AI's mainFwd) → held_ai
 held_player → (Space release or 2s auto) → live
 held_ai → (AI timer or 2s auto) → live
-live → (enters goal mouth on ground) → on_gk (after goal pause)
+live → (hits player paddle, Space NOT held) → bounce (normal Pong deflection)
+live → (hits player paddle, Space IS held, in BOX) → held_player (CATCH)
+live → (hits player paddle, Space IS held, in DEF) → live (LOB CLEARANCE)
+live → (hits player paddle, Space IS held, in MID) → live (CURVING SHOT)
+live → (hits player paddle, Space IS held, in FWD) → live (POWER BLAST)
+live → (hits AI paddle) → AI zone logic
+live → (enters goal mouth on ground) → held_player or held_ai (restart from box)
 ```
 
 States:
-- **on_gk**: Ball stuck to front of serving GK. Player aims GK with arrows, releases with Space. AI serves after random delay (0.6–1.4s) with slight random lob.
 - **live**: Ball is in play, physics running, collisions active.
-- **held_player**: Ball stuck to front of Maradona. Player can move, aim, and shoot with Space. Auto-releases after `HOLD_TIME_LIMIT` (2.0s) as a quick flat shot.
-- **held_ai**: Ball stuck to front of AI's main forward (Schillaci). AI aims briefly then shoots after 0.4–1.2s. Also auto-releases at 2s.
+- **held_player**: Ball stuck to front of player's paddle (only happens in box/keeper zone). Player can move, aim, and release with Space. Auto-releases after `HOLD_TIME_LIMIT` (2.0s).
+- **held_ai**: Ball stuck to front of AI's paddle (only when AI is in their box). AI aims briefly then releases after 0.4–1.2s.
+
+**After a goal:** Ball restarts with the conceding team. Their paddle starts in the box (keeper zone) with the ball held. They aim and release to restart play — this replaces the old GK serve mechanic.
 
 ---
 
-## Teams: Italia 90 Semifinal
+## Teams: Italia 90
 
-### Argentina (Left, Light Blue #75AADB) — Player's Team
+### Italy (Left, Dark Blue #003DA5) — Player's Team
 
-| # | Name | Role | Formation Position |
+| # | Name | Role | Formation Zone |
 |---|---|---|---|
-| 12 | Goycochea | GK | Goal line |
-| 14 | Giusti | DEF | Back 4, top |
-| 18 | Serrizuela | DEF | Back 4 |
-| 19 | Ruggeri | DEF | Back 4 |
-| 16 | Olarticoechea | DEF | Back 4, bottom |
-| 20 | Simón | MID | Midfield 4, top |
-| 4 | Basualdo | MID | Midfield 4 |
-| 7 | Burruchaga | MID | Midfield 4 |
-| 6 | Calderón | MID | Midfield 4, bottom |
-| **10** | **Maradona (C)** | **FWD** | **Player-controlled forward** |
-| 8 | Caniggia | FWD | AI forward |
-
-### Italy (Right, Dark Blue #003DA5) — AI Team
-
-| # | Name | Role | Formation Position |
-|---|---|---|---|
-| 1 | Zenga | GK | Goal line |
+| 1 | Zenga | GK (box zone) | Goal area |
 | 2 | Bergomi | DEF | Back 4, top |
 | 6 | Baresi (C) | DEF | Back 4 |
 | 5 | Ferri | DEF | Back 4 |
@@ -112,19 +106,36 @@ States:
 | 8 | De Napoli | MID | Midfield 4 |
 | 16 | Berti | MID | Midfield 4 |
 | 11 | Giannini | MID | Midfield 4, bottom |
-| **19** | **Schillaci** | **FWD** | **AI main forward (can catch)** |
-| 15 | Baggio | FWD | AI forward |
+| **19** | **Schillaci** | **FWD** | **Forward zone** |
+| 15 | Baggio | FWD | Forward zone |
+
+### Brazil (Right, Yellow #FFDF00) — AI Team
+
+| # | Name | Role | Formation Zone |
+|---|---|---|---|
+| 1 | Taffarel | GK (box zone) | Goal area |
+| 2 | Jorginho | DEF | Back 4, top |
+| 4 | Dunga (C) | DEF | Back 4 |
+| 3 | Ricardo Gomes | DEF | Back 4 |
+| 6 | Branco | DEF | Back 4, bottom |
+| 5 | Alemão | MID | Midfield 4, top |
+| 8 | Valdo | MID | Midfield 4 |
+| 15 | Mazinho | MID | Midfield 4 |
+| 17 | Silas | MID | Midfield 4, bottom |
+| **11** | **Romário** | **FWD** | **Forward zone** |
+| 9 | Careca | FWD | Forward zone |
+
+Note: Brazil's 1990 squad. They were eliminated by Argentina in the Round of 16 (Maradona assist to Caniggia). Using them here as the AI opponent for Italy.
 
 ---
 
 ## The Formation Grid (Identity System)
 
-**There are NOT 11 paddles per side.** Each team has exactly **2 paddles**: one GK and one outfield player. The formation grid is a **naming system** — the outfield paddle's identity changes based on where it is on the field when it receives or shoots the ball.
-
-This is how it works: the 4-4-2 formation defines **zones** on the field. When the paddle catches, volleys, or shoots from a zone, it "becomes" the player assigned to that zone. The paddle's displayed name and number update accordingly.
+**One paddle per team.** The 4-4-2 formation defines **zones** on the field. As the paddle moves through zones, its displayed identity (name, number) updates to match the player assigned to that zone. The paddle's **neon color shifts to keeper colors** when in the box — this is the key visual cue.
 
 **Zone x-ranges (ratio of screen width, left team):**
 ```
+BOX zone:  0.00 – 0.05   →  Goycochea (keeper colors, Space = catch)
 DEF zone:  0.05 – 0.22   →  Giusti / Serrizuela / Ruggeri / Olarticoechea
 MID zone:  0.22 – 0.38   →  Simón / Basualdo / Burruchaga / Calderón
 FWD zone:  0.38 – 0.50   →  Maradona / Caniggia
@@ -132,32 +143,25 @@ FWD zone:  0.38 – 0.50   →  Maradona / Caniggia
 
 **Within each zone, y-position picks the specific player.** The 4-player lines (DEF, MID) are split into vertical bands at 0.15, 0.38, 0.62, 0.85. The 2-player lines (FWD) split at 0.37, 0.63.
 
-**Example:** Your paddle is at x=0.15, y=0.70 when it catches the ball → that's the DEF zone, lower half → you're "Olarticoechea #16". You run forward to x=0.40 and shoot → now you're "Maradona #10" (FWD zone, center).
-
-**The AI outfield paddle works the same way** for the opposing team. Schillaci, Baggio, Baresi etc. are all the same paddle — its name changes with position.
+**Example:** Your paddle is at x=0.15, y=0.70 → DEF zone, lower half → you're "Olarticoechea #16" with lob clearance ability. You sprint forward to x=0.42 → now you're "Maradona #10" with power blast. You rush back to x=0.03 → keeper colors activate, you're "Goycochea #12" and can catch.
 
 **Why this matters:**
 - Commentary: "Goal scored by Maradona!" vs "Goal scored by Burruchaga!" based on where the shot came from
 - Stats tracking: goals per player, even though it's one paddle
-- Feels like a full team without the chaos of 22 paddles
-- The GK is always the GK (Goycochea / Zenga) — that identity is fixed
+- Zone-specific abilities give each position a distinct feel
+- The keeper color shift is instant UX — you know you can catch without any tutorial
 
 ---
 
 ## Paddle Sizes
 
-Each team has exactly **2 physical paddles**: one GK and one outfield. That's it. Both teams' outfield paddles must be the **same size** — the player's advantage is being human-controlled, not having a bigger paddle.
+**One paddle per team**, same size for both. No size changes between zones — the paddle stays constant. Only the identity, neon color, and Space ability change.
 
 All sizes are responsive (height as ratio of screen H):
 
 | Paddle | Width (px) | Height (ratio of H) |
 |---|---|---|
-| GK | 8 | 0.07 |
-| Outfield (both teams) | 7 | 0.05 |
-
-There is NO separate `PLAYER_H_RATIO`. Both outfield paddles use the same dimensions. Do not give the player's outfield paddle a larger size — remove any `_isPlayer` size branching in `makePaddle()`.
-
-The outfield paddle's **identity** (name, number) changes by position zone (see Formation Grid above), but its **physical size stays constant** regardless of which player name it's showing.
+| Paddle (both teams) | 7 | 0.05 |
 
 ---
 
@@ -165,9 +169,9 @@ The outfield paddle's **identity** (name, number) changes by position zone (see 
 
 **Sub-stepped physics** to prevent tunneling: each frame's movement is divided into steps no larger than `ball.size * 0.5` pixels.
 
-**Paddle collision:** Ball bounces off the paddle face. Exit angle is determined by where the ball hits the paddle (center = straight, edge = steep angle, up to `MAX_BOUNCE_ANGLE = π/3`). Speed increases by `BALL_ACCEL = 1.02×` on each hit, capped at `W * BALL_MAX_SPEED`.
+**Paddle collision (no Space):** Ball bounces off the paddle face. Normal Pong deflection. Exit angle is determined by where the ball hits the paddle (center = straight, edge = steep angle, up to `MAX_BOUNCE_ANGLE = π/3`). Speed increases by `BALL_ACCEL = 1.02×` on each hit, capped at `W * BALL_MAX_SPEED`.
 
-**Catch priority:** In the physics loop, the player's main forward is checked FIRST (so the player catches over a random deflection). Then AI's main forward. Then all remaining paddles (deflect only).
+**Paddle collision (Space held):** Zone-specific move triggers instead of a bounce. See Core Concept table for what each zone does.
 
 **Goal posts:** Physical rectangles at top and bottom of goal mouth. Ball bounces off posts and off the back wall outside the goal mouth. Goals only count when ball crosses the goal line within the mouth AND is on the ground (not airborne).
 
@@ -175,30 +179,16 @@ The outfield paddle's **identity** (name, number) changes by position zone (see 
 
 ---
 
-## GK AI
+## AI Paddle
 
-Both goalkeepers use the same AI with a `skill` parameter (0–1):
+The AI team has **one paddle** that works the same zone system. The AI decides where to position itself based on game state:
 
-- `GK_SKILL_LEFT = 0.72` (Goycochea — player's GK, slightly better)
-- `GK_SKILL_RIGHT = 0.68` (Zenga)
+- **Ball moving toward AI goal:** AI retreats to box (keeper mode), tracks ball y to block shots
+- **Ball in AI's half, not immediate threat:** AI positions in DEF/MID zone, uses zone-appropriate abilities
+- **Ball in player's half (AI attacking):** AI pushes to FWD zone, looks for power blast or curving shot opportunities
+- **AI holds ball (caught in box):** Aims briefly then distributes after 0.4–1.2s
 
-Higher skill = faster tracking, less lag. GK tracks ball y when ball is moving toward their goal, returns to center otherwise. Movement is smoothed with a lag factor: `effectiveTarget = current + (target - current) * (1 - lag)`.
-
-Left GK AI is **skipped** when `ballState === 'on_gk' && serveFromLeft` — player controls the GK during serve.
-
----
-
-## Formation AI
-
-Non-player outfield paddles use zone-based AI:
-
-1. Calculate `activeFactor` based on ball distance (0 = ball far, 1 = ball close)
-2. Track ball y-position weighted by activeFactor (more active = tracks more closely)
-3. Stay within vertical zone (homeY ± zoneMargin × 3)
-4. Forwards/midfielders have slight x-drift (push forward on attack, retreat on defense)
-5. Movement speed: forwards 0.7× base, others 0.55× base
-
-Right team's main forward (Schillaci) has special AI for the catch-and-shoot mechanic: when holding the ball, he moves to a shooting position then fires after 0.4–1.2s with a slight random lob.
+AI `skill` parameter (0–1) controls tracking speed and decision quality. Higher skill = faster reactions, better positioning choices, more accurate shots.
 
 ---
 
