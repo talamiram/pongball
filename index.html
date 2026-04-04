@@ -324,14 +324,30 @@
       const charge = chargeTime || 0;
 
       const speed = W * BALL_SPEED;
-      const angle = (Math.random() - 0.5) * 0.25;
+
+      // Arrow keys aim the serve (read at release)
+      let aimY = 0;
+      if (serveFromLeft) {  // player serve
+        if (keys['ArrowUp'])   aimY = -0.6;
+        if (keys['ArrowDown']) aimY =  0.6;
+      } else {
+        aimY = (Math.random() - 0.5) * 0.3;  // AI: slight random
+      }
+      const angle = aimY;
 
       ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2
                              : gk.x - ball.size / 2 - 2;
       ball.vx = Math.cos(angle) * speed * dir;
       ball.vy = Math.sin(angle) * speed;
       ball.z = 0;
-      ball.vz = charge * H * LOB_POWER;
+
+      // Down arrow = flatten the lob (hard low pass even with long charge)
+      let lobMult = 1.0;
+      if (serveFromLeft) {
+        if (keys['ArrowDown']) lobMult = 0.0;  // cancel lob — hard flat
+        if (keys['ArrowUp'])   lobMult = 1.4;  // boost lob
+      }
+      ball.vz = charge * H * LOB_POWER * lobMult;
 
       lastShotChargeTime = charge;
       currentMaxZ = 0;
@@ -346,14 +362,26 @@
       const charge = chargeTime || 0;
 
       const speed = W * BALL_SPEED * 1.15;
-      const velY = paddle.isPlayer ? playerVelY : 0;
-      const spinInfluence = clamp(velY / (H * 0.5), -1, 1);
-      const angle = spinInfluence * MAX_BOUNCE_ANGLE * 0.7;
+
+      // Arrow keys aim the shot (read at release)
+      let aimY = 0;
+      if (paddle.isPlayer) {
+        if (keys['ArrowUp'])   aimY = -0.6;
+        if (keys['ArrowDown']) aimY =  0.6;
+      }
+      const angle = aimY;
 
       ball.vx = Math.cos(angle) * speed * dir;
-      ball.vy = Math.sin(angle) * speed + velY * 0.2;
+      ball.vy = Math.sin(angle) * speed;
       ball.z = 0;
-      ball.vz = charge * H * LOB_POWER;
+
+      // Down = cancel lob (hard low drive), Up = boost lob
+      let lobMult = 1.0;
+      if (paddle.isPlayer) {
+        if (keys['ArrowDown']) lobMult = 0.0;  // hard flat shot
+        if (keys['ArrowUp'])   lobMult = 1.4;  // extra high lob
+      }
+      ball.vz = charge * H * LOB_POWER * lobMult;
 
       lastShotChargeTime = charge;
       currentMaxZ = 0;
@@ -369,18 +397,20 @@
       const speed = W * BALL_SPEED * 1.3;  // harder than a normal shot
 
       // Direction from arrow keys at moment of contact
-      let aimX = 1;  // default: forward
       let aimY = 0;
-      if (keys['ArrowUp'])   aimY = -0.7;
-      if (keys['ArrowDown']) aimY =  0.7;
+      if (keys['ArrowUp'])   aimY = -0.6;
+      if (keys['ArrowDown']) aimY =  0.6;
+      const angle = aimY;
 
-      const angle = Math.atan2(aimY, aimX);
       ball.vx = Math.cos(angle) * speed * dir;
       ball.vy = Math.sin(angle) * speed;
 
-      // Lob from how long Space was held before contact
+      // Lob from charge, but Down = hard flat volley
       ball.z = 0;
-      ball.vz = spaceHeldTime * H * LOB_POWER;
+      let lobMult = 1.0;
+      if (keys['ArrowDown']) lobMult = 0.0;
+      if (keys['ArrowUp'])   lobMult = 1.4;
+      ball.vz = spaceHeldTime * H * LOB_POWER * lobMult;
 
       lastShotChargeTime = spaceHeldTime;
       currentMaxZ = 0;
@@ -654,7 +684,10 @@
       const playerPaddle = leftTeam.mainFwd;
       const gk = leftTeam.gk;
 
-      if (playerControlsGK) {
+      // When Space is held: arrows AIM the shot, don't move the paddle
+      if (spaceDown && (ballState === 'on_gk' || ballState === 'held_player' || ballState === 'live')) {
+        // Arrows are read at shot time — paddle stays still
+      } else if (playerControlsGK) {
         if (keys['ArrowUp'])   gk.y -= gkSpeed * dt;
         if (keys['ArrowDown']) gk.y += gkSpeed * dt;
         gk.y = clamp(gk.y, 0, H - gk.h);
