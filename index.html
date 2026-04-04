@@ -1510,30 +1510,30 @@
 
       // ─── Scoreboard (above table, LED style) ───
       ctx.save();
-      const scoreY = tl.y - 20;
-      ctx.textAlign = 'center';
+      const scoreY = tl.y - 12;
+      const teamNameY = scoreY - 22;
 
       // Get current player identities
       const leftId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
       const rightId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
 
-      // Left team: short code + player name
+      // Left team name + player — aligned to left court edge
       ctx.font = 'bold 13px monospace';
       ctx.shadowBlur = 8;
       ctx.shadowColor = TEAM_LEFT.primary;
       ctx.fillStyle = TEAM_LEFT.primary;
-      ctx.textAlign = 'right';
+      ctx.textAlign = 'left';
       const leftLabel = leftId ? `${TEAM_LEFT.short}  #${leftId.player.num} ${leftId.player.name.toUpperCase()}` : TEAM_LEFT.short;
-      ctx.fillText(leftLabel, W / 2 - 45, scoreY);
+      ctx.fillText(leftLabel, tl.x, teamNameY);
 
-      // Right team: player name + short code
+      // Right team name + player — aligned to right court edge
       ctx.shadowColor = TEAM_RIGHT.primary;
       ctx.fillStyle = TEAM_RIGHT.primary;
-      ctx.textAlign = 'left';
+      ctx.textAlign = 'right';
       const rightLabel = rightId ? `${rightId.player.name.toUpperCase()} #${rightId.player.num}  ${TEAM_RIGHT.short}` : TEAM_RIGHT.short;
-      ctx.fillText(rightLabel, W / 2 + 45, scoreY);
+      ctx.fillText(rightLabel, tr.x, teamNameY);
 
-      // Score — large glowing white
+      // Score — centered, on its own line below team names
       ctx.textAlign = 'center';
       ctx.shadowColor = '#fff';
       ctx.shadowBlur = 10;
