@@ -182,6 +182,37 @@
       osc.stop(t + 0.1);
     }
 
+    // Lob landing thud (deep satisfying impact)
+    function playLandingThud(intensity) {
+      const ac = ensureAudio();
+      const t = ac.currentTime;
+      const vol = 0.12 * intensity;
+      // Deep thump
+      const osc = ac.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(120, t);
+      osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      osc.connect(g);
+      g.connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+      // Higher click layer
+      const osc2 = ac.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(500 * intensity, t);
+      osc2.frequency.exponentialRampToValueAtTime(100, t + 0.05);
+      const g2 = ac.createGain();
+      g2.gain.setValueAtTime(vol * 0.5, t);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      osc2.connect(g2);
+      g2.connect(ac.destination);
+      osc2.start(t);
+      osc2.stop(t + 0.06);
+    }
+
     // Wall bounce sound (softer thud)
     function playWallSound() {
       const ac = ensureAudio();
@@ -312,6 +343,10 @@
     let netRattleLeft = 0;   // remaining rattle time (seconds)
     let netRattleRight = 0;
     let netRattleSeed = 0;   // randomize rattle pattern per goal
+
+    // Lob landing impact
+    let landingImpact = 0;     // 0→1 decaying shake intensity
+    let landingX = 0, landingY = 0;  // where it landed
 
     // Goal celebration state
     let goalCelebration = null;  // { scorer, team, timer, side }
@@ -748,7 +783,16 @@
         if (ball.z > 0 || ball.vz > 0) {
           ball.z += ball.vz * subDt;
           ball.vz -= GRAVITY * subDt;
-          if (ball.z <= 0) { ball.z = 0; ball.vz = 0; }
+          if (ball.z <= 0) {
+            // Landing impact — intensity based on how fast it was falling
+            const fallSpeed = Math.abs(ball.vz);
+            if (fallSpeed > 80) {
+              landingImpact = Math.min(fallSpeed / 400, 1.0);
+              landingX = ball.x; landingY = ball.y;
+              playLandingThud(landingImpact);
+            }
+            ball.z = 0; ball.vz = 0;
+          }
           if (ball.z > currentMaxZ) currentMaxZ = ball.z;
         }
 
@@ -897,9 +941,10 @@
       // ── AI movement ──
       if (aiPad) aiPaddle(aiPad, dt);
 
-      // Decay net rattle
+      // Decay net rattle + landing impact
       if (netRattleLeft > 0) netRattleLeft = Math.max(0, netRattleLeft - dt);
       if (netRattleRight > 0) netRattleRight = Math.max(0, netRattleRight - dt);
+      if (landingImpact > 0) landingImpact = Math.max(0, landingImpact - dt * 4);
 
       // Decay goal celebration
       if (goalCelebration) {
@@ -1201,26 +1246,29 @@
       const bx = ball.x;
       const by = ball.y - zPx;
 
-      // Ground shadow when airborne
+      // Ground shadow (grows with height)
       if (zPx > 2) {
-        const shadowAlpha = Math.max(0.05, 0.2 - zPx / 400);
+        const airFactor2D = Math.min(zPx / 150, 1);
+        const shadowAlpha = Math.max(0.08, 0.25 - zPx / 600);
+        const shadowSpread = 1.5 + airFactor2D * 2.5;
         ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
         ctx.beginPath();
-        ctx.ellipse(ball.x, ball.y, r * 1.5, r * 0.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(ball.x, ball.y, r * shadowSpread, r * (0.5 + airFactor2D * 0.3), 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Ball trail (fading positions)
-      if (gameMode !== 'physics') {
-        for (let i = 0; i < ballTrail.length; i++) {
-          const t = ballTrail[i];
-          const alpha = (i / ballTrail.length) * 0.3;
-          const tr = r * (0.3 + (i / ballTrail.length) * 0.5);
-          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-          ctx.beginPath();
-          ctx.arc(t.x, t.y - zPx, tr, 0, Math.PI * 2);
-          ctx.fill();
-        }
+      // Landing impact ring (2D)
+      if (landingImpact > 0) {
+        const ringR = (1 - landingImpact) * 50;
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,255,255,${landingImpact * 0.35})`;
+        ctx.lineWidth = 2 * landingImpact;
+        ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 6 * landingImpact;
+        ctx.beginPath();
+        ctx.ellipse(landingX, landingY, ringR, ringR * 0.4, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
       }
 
       // Ball core with glow
@@ -1881,26 +1929,32 @@
         const bp = project3D(ball.x, ball.y, bz + ballLift);
         const r = (ball.size / 2) * bp.scale * 2.5 * (1 + bz / 300);
 
-        // Ground shadow
+        // Ground shadow (grows dramatically with height)
         const gp = project3D(ball.x, ball.y, 0);
-        const shadowAlpha = bz > 2 ? Math.max(0.06, 0.2 - bz / 400) : 0.2;
+        const airFactor = Math.min(bz / 150, 1);  // 0→1 as ball rises
+        const shadowAlpha = bz > 2 ? Math.max(0.08, 0.25 - bz / 600) : 0.15;
+        const shadowSpread = 1.4 + airFactor * 2.0;  // shadow grows wider when high
         ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
         ctx.beginPath();
-        ctx.ellipse(gp.x, gp.y, r * 1.4, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.ellipse(gp.x, gp.y, r * shadowSpread, r * (0.4 + airFactor * 0.3), 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Ball trail (minimal)
-        for (let i = 0; i < ballTrail.length; i++) {
-          const t = ballTrail[i];
-          const tz = bz * (i / ballTrail.length);
-          const tp = project3D(t.x, t.y, tz + ballLift);
-          const alpha = (i / ballTrail.length) * 0.1;
-          const tr = r * (0.2 + (i / ballTrail.length) * 0.3);
-          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        // Landing impact ring (expanding circle on bounce)
+        if (landingImpact > 0) {
+          const lp = project3D(landingX, landingY, 0);
+          const ringR = (1 - landingImpact) * 60 * lp.scale;
+          ctx.save();
+          ctx.strokeStyle = `rgba(255,255,255,${landingImpact * 0.4})`;
+          ctx.lineWidth = 2 * landingImpact;
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 8 * landingImpact;
           ctx.beginPath();
-          ctx.arc(tp.x, tp.y, tr, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.ellipse(lp.x, lp.y, ringR, ringR * 0.35, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
         }
+
+        // No ball trail in 3D mode
 
         ctx.save();
 
