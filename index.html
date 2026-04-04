@@ -23,6 +23,182 @@
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
 
+    // ═══════════════════════════════════════════
+    //  AUDIO ENGINE (Web Audio API, no files)
+    // ═══════════════════════════════════════════
+    let audioCtx = null;
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+
+    // Crowd ambient noise (filtered white noise)
+    let crowdNode = null;
+    let crowdGain = null;
+    function startCrowd() {
+      const ac = ensureAudio();
+      if (crowdNode) return;
+      const bufSize = ac.sampleRate * 2;
+      const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1);
+      crowdNode = ac.createBufferSource();
+      crowdNode.buffer = buf;
+      crowdNode.loop = true;
+      // Band-pass filter to sound like crowd murmur
+      const bp = ac.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 400;
+      bp.Q.value = 0.4;
+      // Low-frequency modulation for "wave" effect
+      const mod = ac.createGain();
+      const lfo = ac.createOscillator();
+      const lfoGain = ac.createGain();
+      lfo.frequency.value = 0.15;  // slow swell
+      lfoGain.gain.value = 0.02;
+      lfo.connect(lfoGain);
+      lfoGain.connect(mod.gain);
+      lfo.start();
+      crowdGain = ac.createGain();
+      crowdGain.gain.value = 0.06;  // quiet background
+      crowdNode.connect(bp);
+      bp.connect(mod);
+      mod.connect(crowdGain);
+      crowdGain.connect(ac.destination);
+      crowdNode.start();
+    }
+    function stopCrowd() {
+      if (crowdNode) { try { crowdNode.stop(); } catch(e) {} crowdNode = null; }
+      crowdGain = null;
+    }
+
+    // Crowd roar (goal excitement — louder, higher pitch burst)
+    function crowdRoar() {
+      const ac = ensureAudio();
+      const dur = 2.5;
+      const buf = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1);
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.loop = false;
+      const bp = ac.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 700;
+      bp.Q.value = 0.3;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.25, ac.currentTime);
+      g.gain.linearRampToValueAtTime(0.15, ac.currentTime + 0.8);
+      g.gain.linearRampToValueAtTime(0, ac.currentTime + dur);
+      src.connect(bp);
+      bp.connect(g);
+      g.connect(ac.destination);
+      src.start();
+      // Also swell the ambient crowd
+      if (crowdGain) {
+        crowdGain.gain.setValueAtTime(0.15, ac.currentTime);
+        crowdGain.gain.linearRampToValueAtTime(0.06, ac.currentTime + 2.5);
+      }
+    }
+
+    // "GOL!" — Italian broadcaster voice (synthesized vowel formants)
+    function playGol() {
+      const ac = ensureAudio();
+      const t = ac.currentTime + 0.2;  // slight delay after goal
+      const dur = 1.8;
+
+      // Vocal oscillator (sawtooth for voice-like timbre)
+      const voice = ac.createOscillator();
+      voice.type = 'sawtooth';
+      // Pitch: starts high, drops like "GOOOOOL!"
+      voice.frequency.setValueAtTime(220, t);
+      voice.frequency.linearRampToValueAtTime(180, t + 0.15);  // "G"
+      voice.frequency.setValueAtTime(200, t + 0.15);            // "O" rise
+      voice.frequency.linearRampToValueAtTime(160, t + dur * 0.8);  // long "O" sustain drops
+      voice.frequency.linearRampToValueAtTime(120, t + dur);     // "L" drop
+
+      // Second harmonic for richness
+      const voice2 = ac.createOscillator();
+      voice2.type = 'sawtooth';
+      voice2.frequency.setValueAtTime(441, t);
+      voice2.frequency.linearRampToValueAtTime(361, t + 0.15);
+      voice2.frequency.setValueAtTime(401, t + 0.15);
+      voice2.frequency.linearRampToValueAtTime(321, t + dur * 0.8);
+      voice2.frequency.linearRampToValueAtTime(241, t + dur);
+
+      // Formant filter for "O" vowel sound
+      const formant1 = ac.createBiquadFilter();
+      formant1.type = 'bandpass';
+      formant1.frequency.value = 500;  // F1 for "O"
+      formant1.Q.value = 8;
+      const formant2 = ac.createBiquadFilter();
+      formant2.type = 'bandpass';
+      formant2.frequency.value = 1000;  // F2 for "O"
+      formant2.Q.value = 8;
+
+      // Amplitude envelope
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.12, t + 0.08);  // attack
+      g.gain.setValueAtTime(0.12, t + 0.15);
+      g.gain.linearRampToValueAtTime(0.08, t + dur * 0.7);  // sustain
+      g.gain.linearRampToValueAtTime(0, t + dur);  // release
+
+      const g2 = ac.createGain();
+      g2.gain.value = 0.06;
+
+      // Route: voice → formant filters → gain → out
+      const merger = ac.createGain();
+      voice.connect(formant1);
+      voice.connect(formant2);
+      voice2.connect(formant1);
+      voice2.connect(formant2);
+      formant1.connect(merger);
+      formant2.connect(merger);
+      merger.connect(g);
+      g.connect(ac.destination);
+
+      voice.start(t);
+      voice.stop(t + dur);
+      voice2.start(t);
+      voice2.stop(t + dur);
+    }
+
+    // Ball hit sound (short percussive click)
+    function playHitSound() {
+      const ac = ensureAudio();
+      const t = ac.currentTime;
+      const osc = ac.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, t);
+      osc.frequency.exponentialRampToValueAtTime(200, t + 0.08);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.15, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      osc.connect(g);
+      g.connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.1);
+    }
+
+    // Wall bounce sound (softer thud)
+    function playWallSound() {
+      const ac = ensureAudio();
+      const t = ac.currentTime;
+      const osc = ac.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300, t);
+      osc.frequency.exponentialRampToValueAtTime(80, t + 0.06);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.08, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      osc.connect(g);
+      g.connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.08);
+    }
+
     let W, H;
     let leftTeam = null, rightTeam = null;
     function resize() {
@@ -137,6 +313,13 @@
     let netRattleRight = 0;
     let netRattleSeed = 0;   // randomize rattle pattern per goal
 
+    // Goal celebration state
+    let goalCelebration = null;  // { scorer, team, timer, side }
+    const CELEBRATION_TIME = 2.0;  // seconds
+
+    // Paddle hit bounce (rubber feel)
+    let paddleBounce = {};  // keyed by paddle ref, { timer, intensity }
+
     let playerVelY = 0;
     let playerPrevY = 0;
 
@@ -192,6 +375,8 @@
       if (e.code === 'Escape' && gameMode !== 'menu') {
         gameMode = 'menu';
         cutsceneActive = false;
+        stopCrowd();
+        goalCelebration = null;
       }
       e.preventDefault();
     });
@@ -301,6 +486,9 @@
       goalPause = 0;  // no pause at kickoff (resetAfterGoal sets 0.8s pause for goals)
       lastTime = performance.now();
 
+      // Start crowd sounds
+      startCrowd();
+
       if (mode === 'match' || mode === 'match3d') {
         cutsceneActive = true;
         cutsceneStartTime = performance.now() / 1000;
@@ -321,7 +509,7 @@
       holdPaddle = p;
       holdTimer = 0;
       if (ball) { ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0; ball.curve = 0; stickBallToFront(p); }
-      goalPause = 0.8;
+      goalPause = 2.0;  // extended for celebration
       aiHoldTimer = 0.6 + Math.random() * 0.8;  // AI holds briefly before distributing
       currentMaxZ = 0;
     }
@@ -484,6 +672,11 @@
         ball.curve = 0;
         if (p.isPlayer) ball.vy += playerVelY * 0.3;
 
+        // Rubber bounce effect on paddle + sound
+        const bounceKey = p.isLeft ? 'left' : 'right';
+        paddleBounce[bounceKey] = { timer: 0.3, intensity: Math.min(newSpeed / (W * 0.3), 1.0) };
+        playHitSound();
+
         return true;
       }
       return false;
@@ -565,10 +758,12 @@
         if (ball.y - ball.size / 2 < 0) {
           ball.y = ball.size / 2;
           ball.vy = Math.abs(ball.vy) * 0.97;
+          playWallSound();
         }
         if (ball.y + ball.size / 2 > H) {
           ball.y = H - ball.size / 2;
           ball.vy = -Math.abs(ball.vy) * 0.97;
+          playWallSound();
         }
 
         const airborne = ball.z > AIR_THRESHOLD;
@@ -613,15 +808,39 @@
 
         // Goal scoring
         if (ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
+          // Right team (AI) scored on left goal
+          const scorerId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
           scoreR++;
           netRattleLeft = 1.2; netRattleSeed = Math.random() * 1000;
+          goalCelebration = {
+            scorer: scorerId ? scorerId.player.name.toUpperCase() : 'GOAL',
+            num: scorerId ? scorerId.player.num : '',
+            team: TEAM_RIGHT,
+            timer: CELEBRATION_TIME,
+            side: 'right',
+            paddle: rightTeam ? rightTeam.paddle : null,
+            ballY: ball.y
+          };
+          crowdRoar(); playGol();
           resetAfterGoal(true);
           return;
         }
         if (ball.x + ball.size / 2 > goalLineR && ball.y > gt && ball.y < gb) {
+          // Left team (player) scored on right goal
+          const scorerId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
           scoreL++;
           netRattleRight = 1.2; netRattleSeed = Math.random() * 1000;
           lastShotMaxZ = currentMaxZ;
+          goalCelebration = {
+            scorer: scorerId ? scorerId.player.name.toUpperCase() : 'GOAL',
+            num: scorerId ? scorerId.player.num : '',
+            team: TEAM_LEFT,
+            timer: CELEBRATION_TIME,
+            side: 'left',
+            paddle: leftTeam ? leftTeam.paddle : null,
+            ballY: ball.y
+          };
+          crowdRoar(); playGol();
           resetAfterGoal(false);
           return;
         }
@@ -685,6 +904,18 @@
       // Decay net rattle
       if (netRattleLeft > 0) netRattleLeft = Math.max(0, netRattleLeft - dt);
       if (netRattleRight > 0) netRattleRight = Math.max(0, netRattleRight - dt);
+
+      // Decay goal celebration
+      if (goalCelebration) {
+        goalCelebration.timer -= dt;
+        if (goalCelebration.timer <= 0) goalCelebration = null;
+      }
+
+      // Decay paddle bounce effects
+      for (const key in paddleBounce) {
+        paddleBounce[key].timer -= dt;
+        if (paddleBounce[key].timer <= 0) delete paddleBounce[key];
+      }
 
       if (goalPause > 0) { goalPause -= dt; return; }
 
@@ -1144,6 +1375,48 @@
         drawPhysicsHUD();
       }
 
+      // ─── Goal celebration overlay (2D) ───
+      if (goalCelebration) {
+        const gc = goalCelebration;
+        const progress = 1 - gc.timer / CELEBRATION_TIME;
+        const fadeIn = Math.min(progress * 4, 1);
+        const fadeOut = Math.max(0, 1 - (progress - 0.7) / 0.3);
+        const alpha = Math.min(fadeIn, fadeOut);
+
+        if (progress < 0.08) {
+          ctx.save();
+          ctx.globalAlpha = (1 - progress / 0.08) * 0.25;
+          ctx.fillStyle = gc.team.primary;
+          ctx.fillRect(0, 0, W, H);
+          ctx.restore();
+        }
+
+        ctx.save();
+        const goalSize = 48 + Math.sin(progress * Math.PI * 4) * 5;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `bold ${goalSize}px monospace`;
+        ctx.shadowColor = gc.team.primary;
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = alpha;
+        ctx.fillText('GOL!', W / 2, H * 0.35);
+        ctx.shadowBlur = 50;
+        ctx.fillStyle = gc.team.primary;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.fillText('GOL!', W / 2, H * 0.35);
+
+        const nameDelay = Math.max(0, (progress - 0.15) * 3);
+        const nameAlpha = Math.min(nameDelay, 1) * fadeOut;
+        ctx.font = 'bold 24px monospace';
+        ctx.shadowColor = gc.team.primary;
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = gc.team.primary;
+        ctx.globalAlpha = nameAlpha;
+        ctx.fillText(`#${gc.num} ${gc.scorer}`, W / 2, H * 0.48);
+        ctx.restore();
+      }
+
       // ESC hint
       ctx.fillStyle = 'rgba(255,255,255,0.15)';
       ctx.font = '9px monospace';
@@ -1515,22 +1788,41 @@
         const teamColor = team ? team.data.primary : '#fff';
         const neonColor = isKeeper ? '#00ff88' : teamColor;
 
-        // Paddle game-space corners (slightly enlarged for 3D visibility)
+        // Paddle game-space corners (enlarged for 3D visibility)
         const cx = p.x + p.w / 2;
         const cy = p.y + p.h / 2;
-        const hw = p.w * 1.1;  // half-width enlarged
-        const hh = p.h * 0.8;  // half-height enlarged
-        const blockH = 14;     // block height (z-axis) for 3D depth
+        let hw = p.w * 1.6;   // half-width — fatter
+        let hh = p.h * 1.1;   // half-height — taller
+        let blockH = 18;      // block height (z-axis) for 3D depth
+        let pz = 0;           // paddle z-offset (for jumping)
 
-        // Project all 8 corners of the 3D block
-        const b0 = project3D(cx - hw, cy - hh, 0);  // bottom-face top-left
-        const b1 = project3D(cx + hw, cy - hh, 0);  // bottom-face top-right
-        const b2 = project3D(cx + hw, cy + hh, 0);  // bottom-face bottom-right
-        const b3 = project3D(cx - hw, cy + hh, 0);  // bottom-face bottom-left
-        const t0 = project3D(cx - hw, cy - hh, blockH);  // top-face top-left
-        const t1 = project3D(cx + hw, cy - hh, blockH);  // top-face top-right
-        const t2 = project3D(cx + hw, cy + hh, blockH);  // top-face bottom-right
-        const t3 = project3D(cx - hw, cy + hh, blockH);  // top-face bottom-left
+        // Rubber squish animation on ball hit
+        const bounceKey = p.isLeft ? 'left' : 'right';
+        const bounce = paddleBounce[bounceKey];
+        if (bounce) {
+          const t = bounce.timer / 0.3;  // 1→0
+          const squish = Math.sin(t * Math.PI * 3) * t * bounce.intensity;
+          hw *= (1 + squish * 0.3);   // stretch width on hit
+          hh *= (1 - squish * 0.15);  // compress height
+          blockH *= (1 - squish * 0.2);
+        }
+
+        // Celebration jump animation
+        if (goalCelebration && goalCelebration.paddle === p) {
+          const ct = goalCelebration.timer;
+          const jumpPhase = (CELEBRATION_TIME - ct) * 6;  // fast bouncing
+          pz = Math.abs(Math.sin(jumpPhase)) * 40 * Math.min(ct / CELEBRATION_TIME, 1);
+        }
+
+        // Project all 8 corners of the 3D block (pz = jump offset)
+        const b0 = project3D(cx - hw, cy - hh, pz);           // bottom-face top-left
+        const b1 = project3D(cx + hw, cy - hh, pz);           // bottom-face top-right
+        const b2 = project3D(cx + hw, cy + hh, pz);           // bottom-face bottom-right
+        const b3 = project3D(cx - hw, cy + hh, pz);           // bottom-face bottom-left
+        const t0 = project3D(cx - hw, cy - hh, pz + blockH);  // top-face top-left
+        const t1 = project3D(cx + hw, cy - hh, pz + blockH);  // top-face top-right
+        const t2 = project3D(cx + hw, cy + hh, pz + blockH);  // top-face bottom-right
+        const t3 = project3D(cx - hw, cy + hh, pz + blockH);  // top-face bottom-left
 
         ctx.save();
 
@@ -1763,6 +2055,56 @@
         const cg = Math.round(255 * (1 - charge * 0.4));
         ctx.fillStyle = `rgb(${cr},${cg},80)`;
         ctx.fillRect(hp.x, hp.y, barW * charge, barH);
+        ctx.restore();
+      }
+
+      // ─── Goal celebration overlay ───
+      if (goalCelebration) {
+        const gc = goalCelebration;
+        const progress = 1 - gc.timer / CELEBRATION_TIME;  // 0→1
+        const fadeIn = Math.min(progress * 4, 1);           // quick fade in
+        const fadeOut = Math.max(0, 1 - (progress - 0.7) / 0.3);  // fade out last 30%
+        const alpha = Math.min(fadeIn, fadeOut);
+
+        // Screen flash on goal (first moments)
+        if (progress < 0.08) {
+          ctx.save();
+          ctx.globalAlpha = (1 - progress / 0.08) * 0.25;
+          ctx.fillStyle = gc.team.primary;
+          ctx.fillRect(0, 0, W, H);
+          ctx.restore();
+        }
+
+        // "GOAL!" text
+        ctx.save();
+        const centerP = project3D(W / 2, H * 0.35, 0);
+        const goalSize = 42 + Math.sin(progress * Math.PI * 4) * 4;
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `bold ${goalSize}px monospace`;
+        ctx.shadowColor = gc.team.primary;
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = alpha;
+        ctx.fillText('GOL!', centerP.x, centerP.y);
+        // Second glow pass for intensity
+        ctx.shadowBlur = 50;
+        ctx.fillStyle = gc.team.primary;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.fillText('GOL!', centerP.x, centerP.y);
+
+        // Scorer name below
+        const nameP = project3D(W / 2, H * 0.50, 0);
+        const nameDelay = Math.max(0, (progress - 0.15) * 3);
+        const nameAlpha = Math.min(nameDelay, 1) * fadeOut;
+        ctx.font = 'bold 22px monospace';
+        ctx.shadowColor = gc.team.primary;
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = gc.team.primary;
+        ctx.globalAlpha = nameAlpha;
+        ctx.fillText(`#${gc.num} ${gc.scorer}`, nameP.x, nameP.y);
+
         ctx.restore();
       }
 
