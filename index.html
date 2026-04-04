@@ -1219,7 +1219,7 @@
 
       // ─── Draw table body (black box below the playing surface) ───
       const bodyTop = H * 0.88;
-      const bodyH = H * 0.14;
+      const bodyH = H * 0.18;
 
       // Table front face
       const tblL = W * 0.04;
@@ -1240,31 +1240,27 @@
       ctx.closePath();
       ctx.fill();
 
-      // ─── PONGBALL branding on table front ───
+      // ─── PONGBALL branding on table front (centered) ───
       ctx.save();
       ctx.fillStyle = '#fff';
-      ctx.font = `bold ${Math.max(20, W * 0.028)}px monospace`;
+      ctx.font = `bold ${Math.max(24, W * 0.035)}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('PONGBALL', W * 0.28, bodyTop + bodyH * 0.35);
-      ctx.fillText('PONGBALL', W * 0.72, bodyTop + bodyH * 0.35);
+      ctx.fillText('PONGBALL', W / 2, bodyTop + bodyH * 0.32);
 
       // Italia '90 with flag stripe
-      ctx.font = `bold ${Math.max(10, W * 0.012)}px monospace`;
+      ctx.font = `bold ${Math.max(11, W * 0.013)}px monospace`;
       ctx.fillStyle = '#ccc';
-      ctx.fillText("ITALIA '90", W * 0.28, bodyTop + bodyH * 0.60);
-      ctx.fillText("ITALIA '90", W * 0.72, bodyTop + bodyH * 0.60);
+      ctx.fillText("ITALIA '90", W / 2, bodyTop + bodyH * 0.52);
 
-      // Italian flag stripes
-      const flagW = W * 0.04;
+      // Italian flag stripe (centered)
+      const flagW = W * 0.05;
       const flagH = 3;
-      [W * 0.28, W * 0.72].forEach(cx => {
-        const fx = cx - flagW / 2;
-        const fy = bodyTop + bodyH * 0.72;
-        ctx.fillStyle = '#009246'; ctx.fillRect(fx, fy, flagW / 3, flagH);
-        ctx.fillStyle = '#fff';    ctx.fillRect(fx + flagW / 3, fy, flagW / 3, flagH);
-        ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx + flagW * 2 / 3, fy, flagW / 3, flagH);
-      });
+      const fx = W / 2 - flagW / 2;
+      const fy = bodyTop + bodyH * 0.63;
+      ctx.fillStyle = '#009246'; ctx.fillRect(fx, fy, flagW / 3, flagH);
+      ctx.fillStyle = '#fff';    ctx.fillRect(fx + flagW / 3, fy, flagW / 3, flagH);
+      ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx + flagW * 2 / 3, fy, flagW / 3, flagH);
       ctx.restore();
 
       // ─── Art deco stripes on table sides ───
