@@ -213,45 +213,19 @@
     function buildTeam(td, isLeft, physicsMode) {
       const side = isLeft ? 'L' : 'R';
       const gk = makePaddle(td.gk, 'gk', isLeft, FORM_X['gk' + side], 0.5, td);
-
-      const defYs = [0.15, 0.38, 0.62, 0.85];
-      const midYs = [0.15, 0.38, 0.62, 0.85];
-      const fwdYs = [0.37, 0.63];
-
       const players = [];
 
-      // In physics mode: skip formation for right team entirely, left team only gets the forward
+      // Physics mode right team: GK only (no forward to shoot against you)
       if (physicsMode && !isLeft) {
-        // Right team: GK only, no outfield
         return { gk, players: [], mainFwd: null, data: td, isLeft };
       }
 
-      if (!physicsMode) {
-        td.def.forEach((p, i) => {
-          players.push(makePaddle(p, 'def', isLeft, FORM_X['def' + side], defYs[i], td));
-        });
-        td.mid.forEach((p, i) => {
-          players.push(makePaddle(p, 'mid', isLeft, FORM_X['mid' + side], midYs[i], td));
-        });
-      }
+      // Both modes: one main forward per team
+      // Match: GK + forward per side (2v2). Physics: GK + player forward (2v1).
+      const mainInfo = { ...td.fwd[0], _isMainFwd: true };
+      if (isLeft) mainInfo._isPlayer = true;
 
-      const fwdData = td.fwd.map((p, i) => {
-        const info = { ...p };
-        if (i === 0) {
-          info._isMainFwd = true;
-          if (isLeft) info._isPlayer = true;
-        }
-        return info;
-      });
-
-      if (physicsMode && isLeft) {
-        // Physics mode: only the player forward, no AI forward
-        players.push(makePaddle(fwdData[0], 'fwd', isLeft, FORM_X['fwd' + side], 0.5, td));
-      } else {
-        fwdData.forEach((p, i) => {
-          players.push(makePaddle(p, 'fwd', isLeft, FORM_X['fwd' + side], fwdYs[i], td));
-        });
-      }
+      players.push(makePaddle(mainInfo, 'fwd', isLeft, FORM_X['fwd' + side], 0.5, td));
 
       const mainFwd = players.find(p => p.isMainFwd);
       return { gk, players, mainFwd, data: td, isLeft };
