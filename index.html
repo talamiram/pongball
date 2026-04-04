@@ -771,80 +771,159 @@
 
     // ─── DRAW FIELD ───
     function drawField() {
-      ctx.fillStyle = '#0a1f0a';
+      // White background for match mode
+      ctx.fillStyle = gameMode === 'physics' ? '#0a1f0a' : '#fff';
       ctx.fillRect(0, 0, W, H);
 
-      ctx.strokeStyle = '#1a4d1a';
-      ctx.lineWidth = 1.5;
+      if (gameMode === 'physics') {
+        // Physics lab: keep the green field look
+        ctx.strokeStyle = '#1a4d1a';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 8]);
+        ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(W / 2, H / 2, H * 0.10, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeRect(1, 1, W - 2, H - 2);
+      }
 
-      ctx.setLineDash([8, 8]);
-      ctx.beginPath();
-      ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.beginPath();
-      ctx.arc(W / 2, H / 2, H * 0.10, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = '#1a4d1a';
-      ctx.beginPath();
-      ctx.arc(W / 2, H / 2, 3, 0, Math.PI * 2);
-      ctx.fill();
-
-      const penW = W * 0.10;
-      const penH = H * 0.45;
-      ctx.strokeStyle = '#1a4d1a';
-      ctx.strokeRect(0, H / 2 - penH / 2, penW, penH);
-      ctx.strokeRect(W - penW, H / 2 - penH / 2, penW, penH);
-      const gaW = penW * 0.4;
-      const gaH = penH * 0.5;
-      ctx.strokeRect(0, H / 2 - gaH / 2, gaW, gaH);
-      ctx.strokeRect(W - gaW, H / 2 - gaH / 2, gaW, gaH);
-      ctx.strokeRect(1, 1, W - 2, H - 2);
-
-      // Goal posts
+      // Goal posts + 3D perspective nets
       const gt = goalTop();
       const gb = goalBottom();
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, gt - POST_THICK, GOAL_DEPTH, POST_THICK);
-      ctx.fillRect(0, gb, GOAL_DEPTH, POST_THICK);
-      ctx.fillRect(0, gt - POST_THICK, 3, gb - gt + POST_THICK * 2);
-      ctx.fillRect(W - GOAL_DEPTH, gt - POST_THICK, GOAL_DEPTH, POST_THICK);
-      ctx.fillRect(W - GOAL_DEPTH, gb, GOAL_DEPTH, POST_THICK);
-      ctx.fillRect(W - 3, gt - POST_THICK, 3, gb - gt + POST_THICK * 2);
+      const netDepth = GOAL_DEPTH * 2.5;  // deeper nets for 3D effect
+      const netHeight = 40;  // visual height of crossbar above
 
-      // Goal net
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      ctx.lineWidth = 0.5;
-      for (let y = gt; y < gb; y += 12) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(GOAL_DEPTH - 2, y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(W, y); ctx.lineTo(W - GOAL_DEPTH + 2, y); ctx.stroke();
-      }
-      for (let x = 3; x < GOAL_DEPTH; x += 12) {
-        ctx.beginPath(); ctx.moveTo(x, gt); ctx.lineTo(x, gb); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(W - x, gt); ctx.lineTo(W - x, gb); ctx.stroke();
-      }
+      // Draw both goals
+      [0, 1].forEach(side => {
+        const isLeft = side === 0;
+        const goalX = isLeft ? 0 : W;
+        const dir = isLeft ? 1 : -1;
+
+        // 3D net: perspective lines from posts to back corners
+        ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+        ctx.lineWidth = 0.5;
+
+        // Vertical net lines (front to back, with perspective converging)
+        const netSpacing = 10;
+        for (let y = gt; y <= gb; y += netSpacing) {
+          ctx.beginPath();
+          ctx.moveTo(goalX, y);
+          // Converge slightly toward center at the back
+          const backY = y + (H / 2 - y) * 0.15;
+          ctx.lineTo(goalX + netDepth * dir, backY - netHeight * 0.3);
+          ctx.stroke();
+        }
+
+        // Horizontal net lines (at different depths)
+        for (let d = 0; d <= netDepth; d += netSpacing) {
+          const t = d / netDepth;
+          const x = goalX + d * dir;
+          const topY = gt - netHeight * t * 0.8 + (H / 2 - gt) * t * 0.15;
+          const botY = gb + (H / 2 - gb) * t * 0.15;
+          ctx.beginPath();
+          ctx.moveTo(x, topY);
+          ctx.lineTo(x, botY);
+          ctx.stroke();
+        }
+
+        // Top net (crossbar depth lines)
+        for (let d = 0; d <= netDepth; d += netSpacing) {
+          const t = d / netDepth;
+          const x = goalX + d * dir;
+          const topY = gt - netHeight * (1 - t * 0.2);
+          const backTopY = gt - netHeight * t * 0.8 + (H / 2 - gt) * t * 0.15;
+          ctx.beginPath();
+          ctx.moveTo(x, backTopY);
+          ctx.stroke();
+        }
+        // Top horizontal lines connecting across
+        for (let i = 0; i <= 3; i++) {
+          const t = i / 3;
+          const yOff = netHeight * t;
+          ctx.beginPath();
+          ctx.moveTo(goalX, gt - yOff);
+          ctx.lineTo(goalX + netDepth * dir, gt - yOff * 0.3 + (H / 2 - gt) * (netDepth / netDepth) * 0.15);
+          ctx.stroke();
+        }
+
+        // Posts (solid black)
+        ctx.fillStyle = '#000';
+        ctx.fillRect(isLeft ? 0 : W - 3, gt - netHeight, 3, gb - gt + netHeight);  // vertical post + crossbar height
+        // Crossbar
+        ctx.fillRect(isLeft ? 0 : W - GOAL_DEPTH, gt - netHeight, GOAL_DEPTH, 3);
+        // Bottom post
+        ctx.fillRect(isLeft ? 0 : W - 3, gb, 3, 3);
+      });
     }
 
     function drawPaddle(p) {
-      if (p.isPlayer) { ctx.shadowColor = p.color; ctx.shadowBlur = 8; }
-      ctx.fillStyle = p.color;
-      ctx.fillRect(p.x, p.y, p.w, p.h);
-      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+      const cx = p.x + p.w / 2;
+      const bodyTop = p.y;
+      const bodyBot = p.y + p.h;
+      const headR = Math.max(5, p.h * 0.12);
+      const bootH = Math.max(3, p.h * 0.08);
+      const bootW = p.w * 1.4;
 
-      // GKs show fixed number; outfield paddles show zone-based number
-      let displayNum = p.num;
-      if (!p.isGK && (leftTeam || rightTeam)) {
+      const isMatch = gameMode !== 'physics';
+      const color = isMatch ? '#000' : '#fff';
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+
+      // Head
+      ctx.beginPath();
+      ctx.arc(cx, bodyTop - headR - 1, headR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Body (the paddle hitbox)
+      ctx.fillRect(p.x, bodyTop, p.w, p.h);
+
+      // Boots
+      ctx.fillRect(cx - bootW / 2, bodyBot, bootW * 0.4, bootH);
+      ctx.fillRect(cx + bootW * 0.1, bodyBot, bootW * 0.4, bootH);
+
+      // GK glove arm
+      if (p.isGK) {
+        const armLen = p.w * 1.8;
+        const armY = bodyTop + p.h * 0.25;
+        const armDir = p.isLeft ? 1 : -1;
+        ctx.fillRect(cx, armY, armLen * armDir, p.w * 0.6);
+        // Glove (circle at end)
+        ctx.beginPath();
+        ctx.arc(cx + armLen * armDir, armY + p.w * 0.3, p.w * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Zone-based identity for label
+      let displayNum, displayName;
+      if (p.isGK) {
+        displayNum = p.num;
+        displayName = p.name;
+      } else {
         const team = p.isLeft ? leftTeam : rightTeam;
         if (team) {
           const identity = getZoneIdentity(p, team.data);
           displayNum = identity.player.num;
+          displayName = identity.player.name;
+        } else {
+          displayNum = p.num;
+          displayName = p.name;
         }
       }
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.font = '8px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(displayNum, p.x + p.w / 2, p.y - 3);
+
+      // Label below: #NUM NAME
+      ctx.fillStyle = color;
+      ctx.font = 'bold 9px monospace';
+      // Align labels so GKs near edges don't get cut off
+      if (p.isGK && p.isLeft) {
+        ctx.textAlign = 'left';
+        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, p.x, bodyBot + bootH + 12);
+      } else if (p.isGK && !p.isLeft) {
+        ctx.textAlign = 'right';
+        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, p.x + p.w, bodyBot + bootH + 12);
+      } else {
+        ctx.textAlign = 'center';
+        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, cx, bodyBot + bootH + 12);
+      }
     }
 
     function drawBall() {
@@ -852,11 +931,14 @@
       const zPx = ball.z;
       const zScale = 1 + zPx / 300;
       const drawSize = ball.size * zScale;
+      const isMatch = gameMode !== 'physics';
+      const ballColor = isMatch ? '#000' : '#fff';
 
+      // Ground shadow when airborne
       if (zPx > 2) {
-        const shadowAlpha = Math.max(0.06, 0.25 - zPx / 500);
+        const shadowAlpha = Math.max(0.04, 0.2 - zPx / 500);
         const shadowSpread = 1 + zPx / 50;
-        ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
+        ctx.fillStyle = isMatch ? `rgba(0,0,0,${shadowAlpha})` : `rgba(255,255,255,${shadowAlpha})`;
         const sw = ball.size * shadowSpread;
         const sh = ball.size * shadowSpread * 0.4;
         ctx.beginPath();
@@ -864,22 +946,28 @@
         ctx.fill();
       }
 
-      ctx.fillStyle = '#fff';
+      // Ball: outline circle
+      ctx.strokeStyle = ballColor;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(ball.x, ball.y - zPx, drawSize / 2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.stroke();
     }
 
     function drawHUD() {
+      const isMatch = gameMode !== 'physics';
+      const fg = isMatch ? '#000' : '#fff';
+      const fgAlpha = isMatch ? 'rgba(0,0,0,' : 'rgba(255,255,255,';
+
       // Hold timer
       if (ballState === 'held_player' && holdPaddle) {
         const barW = 36; const barH = 3;
         const bx = holdPaddle.x + holdPaddle.w + 6;
         const by = holdPaddle.y - 8;
         const pct = 1 - (holdTimer / HOLD_TIME_LIMIT);
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillStyle = fgAlpha + '0.15)';
         ctx.fillRect(bx, by, barW, barH);
-        ctx.fillStyle = pct > 0.3 ? '#fff' : '#f44';
+        ctx.fillStyle = pct > 0.3 ? fg : '#f44';
         ctx.fillRect(bx, by, barW * pct, barH);
       }
 
@@ -890,56 +978,32 @@
         const barW = 30; const barH = 3;
         const bx = ball.x + ball.size + 4;
         const by = ball.y - 10 - ball.z;
-        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillStyle = fgAlpha + '0.12)';
         ctx.fillRect(bx, by, barW, barH);
         const r = Math.round(255 * charge);
         const g = Math.round(255 * (1 - charge * 0.4));
         ctx.fillStyle = `rgb(${r},${g},80)`;
         ctx.fillRect(bx, by, barW * charge, barH);
       }
-
-      // Prompts
-      ctx.textAlign = 'center';
-      if (ballState === 'on_gk' && serveFromLeft && goalPause <= 0) {
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.font = '10px monospace';
-        ctx.fillText(spaceDown ? 'release...' : 'SPACE: tap = flat  |  hold = lob', W / 2, 20);
-      }
-      if (ballState === 'held_player') {
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.font = '10px monospace';
-        ctx.fillText(spaceDown ? 'release...' : 'SPACE: tap = shoot  |  hold = lob', W / 2, 20);
-      }
     }
 
     function drawScoreboard() {
+      const isMatch = gameMode !== 'physics';
       ctx.font = 'bold 13px monospace';
-      ctx.fillStyle = TEAM_LEFT.primary;
+      ctx.fillStyle = isMatch ? '#000' : TEAM_LEFT.primary;
       ctx.textAlign = 'right';
       ctx.fillText(TEAM_LEFT.short, W / 2 - 45, 48);
-      ctx.fillStyle = TEAM_RIGHT.primary;
+      ctx.fillStyle = isMatch ? '#000' : TEAM_RIGHT.primary;
       ctx.textAlign = 'left';
       ctx.fillText(TEAM_RIGHT.short, W / 2 + 45, 48);
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = isMatch ? '#000' : '#fff';
       ctx.font = 'bold 28px monospace';
       ctx.textAlign = 'center';
       ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, 50);
     }
 
     function drawPlayerLabel() {
-      // Draw zone-based identity for both outfield paddles
-      [leftTeam, rightTeam].forEach(team => {
-        const mp = team.mainFwd;
-        if (!mp) return;
-        if (mp.isPlayer && ballState === 'on_gk') return;
-        const identity = getZoneIdentity(mp, team.data);
-        const p = identity.player;
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.font = '9px monospace';
-        ctx.textAlign = 'center';
-        const label = p.captain ? `${p.name} (C) #${p.num}` : `${p.name} #${p.num}`;
-        ctx.fillText(label, mp.x + mp.w / 2, mp.y + mp.h + 12);
-      });
+      // Labels already drawn in drawPaddle — nothing extra needed here
     }
 
     // ─── PHYSICS MODE DEBUG HUD ───
@@ -1013,6 +1077,44 @@
     // ═══════════════════════════════
     //  RENDER (match or physics)
     // ═══════════════════════════════
+    // ─── ITALIA '90 LOGO (drawn programmatically) ───
+    function drawLogo() {
+      const x = 20, y = 18;
+      const s = 0.7;  // scale
+
+      // Ball shape
+      ctx.save();
+      ctx.translate(x + 30 * s, y + 25 * s);
+      ctx.scale(s, s);
+
+      // Ball circle
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 20, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Pentagon patches (simplified)
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.moveTo(-5, -8); ctx.lineTo(5, -8); ctx.lineTo(7, -1); ctx.lineTo(0, 4); ctx.lineTo(-7, -1);
+      ctx.closePath(); ctx.fill();
+
+      // Italian flag colors on ball
+      ctx.fillStyle = '#009246';
+      ctx.beginPath(); ctx.moveTo(-18, -8); ctx.lineTo(-12, -6); ctx.lineTo(-14, 2); ctx.lineTo(-19, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#CE2B37';
+      ctx.beginPath(); ctx.moveTo(18, -8); ctx.lineTo(12, -6); ctx.lineTo(14, 2); ctx.lineTo(19, 0); ctx.closePath(); ctx.fill();
+
+      ctx.restore();
+
+      // Text
+      ctx.fillStyle = '#000';
+      ctx.font = `bold ${11 * s}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText('ITALIA\'90', x + 30 * s, y + 52 * s);
+    }
+
     function render() {
       drawField();
       allPaddles.forEach(drawPaddle);
@@ -1024,11 +1126,8 @@
       if (gameMode === 'physics') {
         drawPhysicsHUD();
       } else {
-        // Match mode bottom hint
-        ctx.fillStyle = 'rgba(255,255,255,0.1)';
-        ctx.font = '9px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('Arrows = move + aim  |  Space = shoot / volley (hold for lob)  |  ESC = menu', W / 2, H - 8);
+        // Italia '90 logo top-left
+        drawLogo();
       }
     }
 
