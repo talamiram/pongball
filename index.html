@@ -147,9 +147,13 @@
     let lastShotMaxZ = 0;
     let currentMaxZ = 0;
 
-    // Fly-in animation state
-    let flyInProgress = 1;
-    let flyInStartTime = 0;
+    // Cutscene state
+    let cutsceneActive = false;
+    let cutsceneStartTime = 0;
+    const CUTSCENE_DURATION = 2.5;  // total seconds
+    const CUTSCENE_ZOOM_END = 1.8;  // zoom finishes at this time
+    const CUTSCENE_TEXT_START = 0.8; // team names appear
+    const CUTSCENE_TEXT_END = 2.2;   // team names fade out
 
     window.addEventListener('keydown', e => {
       keys[e.code] = true;
@@ -172,9 +176,15 @@
         if (e.code === 'Digit2') startGame('physics');
         if (e.code === 'Digit3') startGame('worldcup');
       }
+      // Skip cutscene
+      if (cutsceneActive && (e.code === 'Space' || e.code === 'Enter')) {
+        cutsceneActive = false;
+        lastTime = performance.now();
+      }
       // ESC back to menu
       if (e.code === 'Escape' && gameMode !== 'menu') {
         gameMode = 'menu';
+        cutsceneActive = false;
       }
       e.preventDefault();
     });
@@ -285,10 +295,10 @@
       lastTime = performance.now();
 
       if (mode === 'match') {
-        flyInProgress = 0;
-        flyInStartTime = performance.now();
+        cutsceneActive = true;
+        cutsceneStartTime = performance.now() / 1000;
       } else {
-        flyInProgress = 1;
+        cutsceneActive = false;
       }
     }
 
@@ -1068,12 +1078,100 @@
       ctx.fillText('ESC = back to menu', cx, H * 0.92);
     }
 
+    // ─── CUTSCENE RENDER ───
+    function renderCutscene(now) {
+      const t = now / 1000 - cutsceneStartTime;
+
+      // Auto-end cutscene
+      if (t >= CUTSCENE_DURATION) {
+        cutsceneActive = false;
+        lastTime = now;  // reset so first update frame doesn't get huge dt
+        return;
+      }
+
+      // Zoom: starts at 0.65, eases to 1.0
+      const zoomT = Math.min(t / CUTSCENE_ZOOM_END, 1);
+      const eased = 1 - Math.pow(1 - zoomT, 3);  // ease-out cubic
+      const scale = 0.65 + eased * 0.35;
+
+      // Draw field + paddles at zoomed scale
+      ctx.save();
+      ctx.fillStyle = '#080808';
+      ctx.fillRect(0, 0, W, H);
+
+      // Translate so the zoom centers on the middle of the field
+      const cx = W / 2, cy = H / 2;
+      ctx.translate(cx * (1 - scale), cy * (1 - scale));
+      ctx.scale(scale, scale);
+
+      drawField();
+      allPaddles.forEach(drawPaddle);
+
+      ctx.restore();
+
+      // Team names overlay
+      if (t >= CUTSCENE_TEXT_START && t < CUTSCENE_TEXT_END) {
+        const textT = (t - CUTSCENE_TEXT_START) / (CUTSCENE_TEXT_END - CUTSCENE_TEXT_START);
+        // Fade in for first 30%, hold, fade out for last 30%
+        let alpha;
+        if (textT < 0.2) alpha = textT / 0.2;
+        else if (textT > 0.7) alpha = (1 - textT) / 0.3;
+        else alpha = 1;
+        alpha = Math.max(0, Math.min(1, alpha));
+
+        const fontSize = Math.max(32, W * 0.045);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Left team name (Italy - blue)
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = TEAM_LEFT.primary;
+        ctx.fillStyle = TEAM_LEFT.primary;
+        ctx.fillText(TEAM_LEFT.name.toUpperCase(), W * 0.35, H * 0.48);
+        ctx.restore();
+
+        // "vs" in white
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.font = `bold ${fontSize * 0.5}px monospace`;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#fff';
+        ctx.fillStyle = '#fff';
+        ctx.fillText('vs', W * 0.5, H * 0.48);
+        ctx.restore();
+
+        // Right team name (Brazil - yellow)
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = TEAM_RIGHT.primary;
+        ctx.fillStyle = TEAM_RIGHT.primary;
+        ctx.fillText(TEAM_RIGHT.name.toUpperCase(), W * 0.65, H * 0.48);
+        ctx.restore();
+      }
+
+      // Skip hint at bottom
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('SPACE to skip', W / 2, H - 15);
+      ctx.restore();
+    }
+
     // ─── MAIN LOOP ───
     function loop(now) {
       if (gameMode === 'menu') {
         renderMenu();
       } else if (gameMode === 'worldcup') {
         renderWorldCup();
+      } else if (cutsceneActive) {
+        renderCutscene(now);
       } else {
         update(now);
         render();
