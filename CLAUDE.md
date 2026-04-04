@@ -226,6 +226,8 @@ The visual target is the **Atari Pong arcade coffee table** — dark surface, ne
 
 When airborne: drawn offset upward by `ball.z` pixels, scales up slightly (`1 + z/300`), and casts a dim ground shadow (ellipse, low opacity) that grows and fades with height. The shadow should be a subtle dark spot, not a bright glow — it's a shadow on a dark surface.
 
+**Raised glass feel:** The playing surface should feel like it has a glass enclosure above it — like the Atari Pong coffee table. When the ball lobs, it should feel like it's rising up inside that glass box, not just floating over a flat screen. Visual cues: the ball's glow could reflect/brighten against a subtle glass edge effect at the top of the screen when it reaches peak height. The neon border strips reinforce this — they're the edges of the glass box. The ball lives inside this lit-up enclosure.
+
 ### Scoreboard & HUD
 
 **Scoreboard** at top center: team short codes in neon team colors flanking the score. Score numbers should be large and glowing, like an LED display. Think digital clock / arcade score aesthetic.
@@ -251,16 +253,34 @@ The outer edge of the playing field should have a **subtle neon border glow** �
 
 ## Intro Cutscene
 
-When a match starts (player selects Match Mode or Physics Lab from menu), play a brief **zoom-in cutscene** before gameplay begins:
+When a match starts (player selects Match Mode or Physics Lab from menu), play a brief **zoom-in cutscene** before gameplay begins. The reference image is the PONGBALL Italia '90 arcade coffee table — black body, white PONG-style logo, Italian flag stripe detail, neon LED border strips on the playing surface, glass top.
 
-1. **Wide shot:** Show the entire playing surface from a slight distance — as if looking at the arcade table from above. The field border glow is visible, paddles are in starting positions, everything is lit up but the ball hasn't spawned.
-2. **Zoom in:** Over ~1.5–2 seconds, smoothly zoom/scale into the normal gameplay view. Use canvas `scale()` and `translate()` — start at ~0.7× scale centered, animate to 1.0× scale at normal position.
-3. **Team names flash:** During or just after the zoom, briefly flash the team names large and centered ("ARGENTINA vs ITALY") in neon team colors, then fade out.
-4. **Ball spawns:** After the zoom completes, the ball appears on the serving GK and gameplay begins.
+### The Sequence
 
-The cutscene should be **skippable** (press Space or Enter to skip straight to gameplay). Keep it short and punchy — this is an arcade game, not a movie. The zoom should feel like a camera settling onto the table.
+1. **3D table view (~1s):** Show the arcade table from an angled perspective — like looking at a coffee table from a seated position. This is a **CSS 3D transform or canvas fake-perspective** of the playing surface: the field is drawn as a trapezoid (narrower at top, wider at bottom) with the neon border glow visible, the "PONGBALL" branding, and the dark glass surface. Paddles are in starting positions. The table body (black rectangle with legs) frames the playing surface. This should feel like a physical object in a room.
 
-**Implementation:** Use a `cutsceneTimer` that counts down during the cutscene phase. The main game loop checks if `gameMode === 'cutscene'` and renders the zoom animation instead of normal gameplay. Once the timer expires (or player skips), switch to normal `gameMode = 'match'` or `'physics'`.
+2. **Zoom & flatten (~1.5–2s):** Smoothly transition from the angled 3D view to a flat top-down view. The perspective flattens, the table body disappears off the edges, and we settle into the normal gameplay view — just the playing surface filling the screen. Use CSS `perspective` + `rotateX` animating to 0, or canvas `setTransform()` interpolation.
+
+3. **Team names flash:** As the zoom completes, flash "ARGENTINA vs ITALY" in large neon team colors, centered, then fade out over ~0.5s.
+
+4. **Ball spawns:** After the transition, the ball appears on the serving GK and gameplay begins.
+
+### Visual Details for the Table View
+
+- **Table body:** Black rectangle with subtle legs visible at the bottom corners
+- **Branding:** "PONGBALL" in large white block letters on the table front, "ITALIA '90" underneath with a small Italian flag stripe (green-white-red)
+- **Playing surface:** Dark glass with the neon field lines visible through it
+- **Border LED strips:** The neon border glow should be the most prominent visual — cyan/team-colored strips running around the inside edge of the playing surface, exactly like the Atari Pong table
+- **Score display:** Small LED-style score visible at the top of the table surface
+
+### Implementation Notes
+
+- The cutscene should be **skippable** (press Space or Enter to skip straight to gameplay)
+- Keep it short and punchy — this is an arcade game, not a movie
+- Use a `cutsceneTimer` that counts down during the cutscene phase
+- The main game loop checks if `gameMode === 'cutscene'` and renders the transition instead of normal gameplay
+- Once the timer expires (or player skips), switch to normal `gameMode = 'match'` or `'physics'`
+- Consider using a separate `<div>` overlay with CSS 3D transforms for the table view, then fading it out to reveal the canvas underneath — this may be simpler than doing perspective transforms on the canvas itself
 
 ---
 
