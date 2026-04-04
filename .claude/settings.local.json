@@ -4,7 +4,10 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(npx --version)",
       "Read(//usr/local/bin/**)",
-      "Read(//Users/talamiram/.nvm/versions/**)"
+      "Read(//Users/talamiram/.nvm/versions/**)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

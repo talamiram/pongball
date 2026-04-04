@@ -74,29 +74,27 @@
       gk:  { num: 1,  name: 'Taffarel',     stats: { speed: 0.7, reaction: 0.72, size: 1.0 } },
       def: [
         { num: 2,  name: 'Jorginho',        stats: { speed: 0.75, reaction: 0.70, size: 1.0 } },
-        { num: 3,  name: 'Ricardo Gomes',   stats: { speed: 0.60, reaction: 0.80, size: 1.1 } },
-        { num: 4,  name: 'Mauro Galvão',    stats: { speed: 0.65, reaction: 0.75, size: 1.05 } },
+        { num: 4,  name: 'Dunga', captain: true, stats: { speed: 0.65, reaction: 0.80, size: 1.1 } },
+        { num: 3,  name: 'Ricardo Gomes',   stats: { speed: 0.60, reaction: 0.80, size: 1.05 } },
         { num: 6,  name: 'Branco',          stats: { speed: 0.70, reaction: 0.70, size: 1.0 } }
       ],
       mid: [
-        { num: 8,  name: 'Dunga', captain: true, stats: { speed: 0.70, reaction: 0.80, size: 1.0 } },
         { num: 5,  name: 'Alemão',          stats: { speed: 0.75, reaction: 0.75, size: 1.0 } },
-        { num: 10, name: 'Valdo',           stats: { speed: 0.80, reaction: 0.80, size: 0.95 } },
-        { num: 7,  name: 'Müller',          stats: { speed: 0.85, reaction: 0.75, size: 0.95 } }
+        { num: 8,  name: 'Valdo',           stats: { speed: 0.80, reaction: 0.80, size: 0.95 } },
+        { num: 15, name: 'Mazinho',         stats: { speed: 0.75, reaction: 0.70, size: 1.0 } },
+        { num: 17, name: 'Silas',           stats: { speed: 0.85, reaction: 0.75, size: 0.95 } }
       ],
       fwd: [
-        { num: 11, name: 'Careca',          stats: { speed: 0.90, reaction: 0.85, size: 0.95 } },
-        { num: 20, name: 'Bebeto',          stats: { speed: 0.95, reaction: 0.80, size: 0.9 } }
+        { num: 11, name: 'Romário',         stats: { speed: 0.95, reaction: 0.90, size: 0.9 } },
+        { num: 9,  name: 'Careca',          stats: { speed: 0.90, reaction: 0.85, size: 0.95 } }
       ]
     };
 
     // ─── CONSTANTS ───
-    const PADDLE_W_GK = 16;
-    const PADDLE_W_OF = 16;
-    const GK_H_RATIO = 0.08;
-    const OUTFIELD_H_RATIO = 0.08;
+    const PADDLE_W = 7;
+    const PADDLE_H_RATIO = 0.05;
     const BALL_SIZE = 12;
-    const GOAL_LINE_RATIO = 0.02;  // goal lines sit 2% in from edges (on the grass)
+    const GOAL_LINE_RATIO = 0.02;
 
     const BALL_SPEED = 0.30;
     const BALL_MAX_SPEED = 0.60;
@@ -104,37 +102,33 @@
     const MAX_BOUNCE_ANGLE = Math.PI / 3;
     const HOLD_TIME_LIMIT = 2.0;
 
-    const GRAVITY = 500;                // was 900 — lower so lobs travel further
-    const LOB_POWER = 1.2;              // was 0.9 — stronger lobs reach the far wall
+    const GRAVITY = 500;
+    const LOB_POWER = 1.2;
     const AIR_THRESHOLD = 10;
 
     const GOAL_HEIGHT_RATIO = 0.30;
     const POST_THICK = 6;
     const GOAL_DEPTH = 18;
 
-    const GK_SKILL_LEFT = 0.72;
-    const GK_SKILL_RIGHT = 0.68;
-    const OF_SPEED_RATIO = 0.45;
-    const GK_SPEED_RATIO = 0.40;
+    const AI_SKILL = 0.70;
+    const PADDLE_SPEED_RATIO = 0.50;
 
-    const FORM_X = {
-      gkL: 0.06, defL: 0.14, midL: 0.30, fwdL: 0.43,
-      gkR: 0.94, defR: 0.86, midR: 0.70, fwdR: 0.57
-    };
+    // Zone x-boundaries (ratio of W, for left team — right is mirrored)
+    const ZONE_BOX = 0.05;   // 0.00 – 0.05 = keeper zone
+    const ZONE_DEF = 0.22;   // 0.05 – 0.22 = defense
+    const ZONE_MID = 0.38;   // 0.22 – 0.38 = midfield
+    // 0.38 – 0.50 = forward
 
     // ─── STATE ───
     let scoreL = 0, scoreR = 0;
-    // Perspective transform functions (set by drawField in match mode)
     let _toScreen = (gx, gy) => ({ x: gx, y: gy });
     let _perspScale = (gy) => 1;
     let ball;
     let allPaddles = [];
 
-    let ballState = 'on_gk';
+    let ballState = 'live';       // 'live' | 'held_player' | 'held_ai'
     let holdPaddle = null;
-    let holdOffsetY = 0;
     let holdTimer = 0;
-    let serveFromLeft = true;
     let goalPause = 0;
 
     let playerVelY = 0;
@@ -145,13 +139,16 @@
     let spaceHeldTime = 0;
     let spaceDown = false;
 
+    // Ball trail for neon effect
+    let ballTrail = [];
+
     // Debug stats for physics mode
     let lastShotChargeTime = 0;
     let lastShotMaxZ = 0;
     let currentMaxZ = 0;
 
     // Fly-in animation state
-    let flyInProgress = 1;  // 0 = zoomed out, 1 = normal (start at 1 = no fly-in)
+    let flyInProgress = 1;
     let flyInStartTime = 0;
 
     window.addEventListener('keydown', e => {
@@ -197,22 +194,19 @@
     function goalTop()    { return H / 2 - H * GOAL_HEIGHT_RATIO / 2; }
     function goalBottom() { return H / 2 + H * GOAL_HEIGHT_RATIO / 2; }
 
-    // ─── BUILD TEAM ───
-    function makePaddle(info, role, isLeft, homeXRatio, homeYRatio, teamData) {
-      const w = role === 'gk' ? PADDLE_W_GK : PADDLE_W_OF;
-      const hRatio = role === 'gk' ? GK_H_RATIO : OUTFIELD_H_RATIO;
-      const h = H * hRatio;
+    // ─── BUILD TEAM — one paddle per team ───
+    function makePaddle(isLeft, teamData) {
+      const w = PADDLE_W;
+      const h = H * PADDLE_H_RATIO;
+      // Start in the box (keeper zone)
+      const homeXRatio = isLeft ? 0.03 : 0.97;
       const homeX = W * homeXRatio - w / 2;
-      const homeY = H * homeYRatio - h / 2;
-
+      const homeY = H * 0.5 - h / 2;
       return {
-        num: info.num, name: info.name, captain: info.captain || false,
-        role, isLeft, isGK: role === 'gk',
-        isPlayer: info._isPlayer || false,
-        isMainFwd: info._isMainFwd || false,
+        isLeft,
+        isPlayer: isLeft,  // left team is player-controlled
         x: homeX, y: homeY, w, h,
-        homeX, homeY, homeXRatio, homeYRatio,
-        hRatio,
+        homeXRatio,
         color: teamData.primary,
         teamName: teamData.short
       };
@@ -227,9 +221,11 @@
       // X zones (left team; right team is mirrored)
       const x = isLeft ? xRatio : (1 - xRatio);
       let zone, zoneList;
-      if (x < 0.22) {
+      if (x < ZONE_BOX) {
+        zone = 'box'; zoneList = [teamData.gk];
+      } else if (x < ZONE_DEF) {
         zone = 'def'; zoneList = teamData.def;
-      } else if (x < 0.38) {
+      } else if (x < ZONE_MID) {
         zone = 'mid'; zoneList = teamData.mid;
       } else {
         zone = 'fwd'; zoneList = teamData.fwd;
@@ -252,68 +248,41 @@
     }
 
     function buildTeam(td, isLeft, physicsMode) {
-      const side = isLeft ? 'L' : 'R';
-      const gk = makePaddle(td.gk, 'gk', isLeft, FORM_X['gk' + side], 0.5, td);
-      const players = [];
-
-      // Physics mode right team: GK only
-      if (physicsMode && !isLeft) {
-        return { gk, players: [], mainFwd: null, data: td, isLeft };
-      }
-
-      // Both modes: one main forward per team
-      const mainInfo = { ...td.fwd[0], _isMainFwd: true };
-      if (isLeft) mainInfo._isPlayer = true;
-      players.push(makePaddle(mainInfo, 'fwd', isLeft, FORM_X['fwd' + side], 0.5, td));
-
-      const mainFwd = players.find(p => p.isMainFwd);
-      return { gk, players, mainFwd, data: td, isLeft };
+      const paddle = makePaddle(isLeft, td);
+      return { paddle, data: td, isLeft };
     }
 
     function repositionAll() {
       [leftTeam, rightTeam].forEach(team => {
         if (!team) return;
-        const gk = team.gk;
-        gk.h = H * gk.hRatio;
-        gk.w = PADDLE_W_GK;
-        gk.homeX = W * gk.homeXRatio - gk.w / 2;
-        gk.homeY = H * gk.homeYRatio - gk.h / 2;
-        gk.x = gk.homeX;
-
-        team.players.forEach(p => {
-          p.h = H * p.hRatio;
-          p.w = PADDLE_W_OF;
-          p.homeX = W * p.homeXRatio - p.w / 2;
-          p.homeY = H * p.homeYRatio - p.h / 2;
-        });
+        const p = team.paddle;
+        p.h = H * PADDLE_H_RATIO;
+        p.w = PADDLE_W;
       });
       rebuildPaddleList();
     }
 
     function rebuildPaddleList() {
       allPaddles = [];
-      [leftTeam, rightTeam].forEach(t => {
-        if (!t) return;
-        allPaddles.push(t.gk);
-        t.players.forEach(p => allPaddles.push(p));
-      });
+      if (leftTeam) allPaddles.push(leftTeam.paddle);
+      if (rightTeam) allPaddles.push(rightTeam.paddle);
     }
 
     // ─── INIT ───
     function startGame(mode) {
       gameMode = mode;
-      if (mode === 'worldcup') return;  // World Cup has its own screen flow
+      if (mode === 'worldcup') return;
       const isPhysics = mode === 'physics';
       leftTeam = buildTeam(TEAM_LEFT, true, isPhysics);
       rightTeam = buildTeam(TEAM_RIGHT, false, isPhysics);
       rebuildPaddleList();
-      ball = { x: 0, y: 0, vx: 0, vy: 0, z: 0, vz: 0, size: BALL_SIZE };
+      ball = { x: 0, y: 0, vx: 0, vy: 0, z: 0, vz: 0, size: BALL_SIZE, curve: 0 };
+      ballTrail = [];
       scoreL = 0; scoreR = 0;
       lastShotChargeTime = 0; lastShotMaxZ = 0; currentMaxZ = 0;
-      resetAfterGoal(true);
+      resetAfterGoal(true);  // left team (conceding side) starts with ball
       lastTime = performance.now();
 
-      // Fly-in animation for match mode
       if (mode === 'match') {
         flyInProgress = 0;
         flyInStartTime = performance.now();
@@ -322,175 +291,153 @@
       }
     }
 
-    function resetAfterGoal(servingLeft) {
-      serveFromLeft = servingLeft;
-      ballState = 'on_gk';
-      holdPaddle = null;
+    function resetAfterGoal(concedingLeft) {
+      // Conceding team gets the ball — their paddle goes to box, holds ball
+      const team = concedingLeft ? leftTeam : rightTeam;
+      const p = team.paddle;
+      // Move paddle to box (keeper zone)
+      p.x = p.isLeft ? W * 0.03 - p.w / 2 : W * 0.97 - p.w / 2;
+      p.y = H * 0.5 - p.h / 2;
+
+      ballState = concedingLeft ? 'held_player' : 'held_ai';
+      holdPaddle = p;
       holdTimer = 0;
-      if (ball) { ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0; }
+      if (ball) { ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0; ball.curve = 0; }
       goalPause = 0.8;
-      aiServeTimer = 0;
+      aiHoldTimer = 0;
       currentMaxZ = 0;
-
-      [leftTeam, rightTeam].forEach(team => {
-        if (!team) return;
-        team.players.forEach(p => { p.x = p.homeX; p.y = p.homeY; });
-      });
     }
 
-    // ─── SERVE FROM GK ───
-    // Shot power curve: medium charge = "shot" (speed boost + lob), long charge = pure high lob
-    // Sweet spot ~0.15-0.4s for aimed shots (top corners), >0.5s = lob over everyone
-    function shotSpeedMult(charge) {
-      if (charge < 0.05) return 1.0;       // tap = flat pass, normal speed
-      if (charge < 0.15) return 1.1 + (charge - 0.05) * 4;  // ramp up
-      if (charge < 0.40) return 1.5;       // SWEET SPOT — "shot" power
-      return 1.5 - (charge - 0.40) * 1.5;  // taper off — pure lob, less forward speed
-    }
+    let aiHoldTimer = 0;
 
-    function serveFromGK(chargeTime) {
-      const team = serveFromLeft ? leftTeam : rightTeam;
-      const gk = team.gk;
-      const dir = serveFromLeft ? 1 : -1;
+    // ─── RELEASE FROM HOLD (box catch → distribute) ───
+    function releaseFromHold(paddle, chargeTime) {
+      const dir = paddle.isLeft ? 1 : -1;
       const charge = chargeTime || 0;
+      const speed = W * BALL_SPEED;
 
-      const speedMult = shotSpeedMult(charge);
-      const speed = W * BALL_SPEED * speedMult;
-
-      // Arrow keys aim the serve (read at release)
       let aimY = 0;
-      if (serveFromLeft) {
-        if (keys['ArrowUp'])   aimY = -0.7;
-        if (keys['ArrowDown']) aimY =  0.7;
+      if (paddle.isPlayer) {
+        if (keys['ArrowUp'])   aimY = -0.5;
+        if (keys['ArrowDown']) aimY =  0.5;
       } else {
-        aimY = (Math.random() - 0.5) * 0.3;
+        aimY = (Math.random() - 0.5) * 0.4;
       }
 
-      ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2
-                             : gk.x - ball.size / 2 - 2;
+      ball.x = paddle.isLeft ? paddle.x + paddle.w + ball.size / 2 + 2
+                              : paddle.x - ball.size / 2 - 2;
       ball.vx = Math.cos(aimY) * speed * dir;
       ball.vy = Math.sin(aimY) * speed;
       ball.z = 0;
-      ball.vz = charge * H * LOB_POWER;
+      ball.vz = charge * H * LOB_POWER * 0.5;  // gentle lob on distribute
+      ball.curve = 0;
 
       lastShotChargeTime = charge;
       currentMaxZ = 0;
       ballState = 'live';
+      holdPaddle = null;
+      holdTimer = 0;
     }
 
-    let aiServeTimer = 0;
-
-    // ─── SHOOT FROM PADDLE ───
-    function shootFromPaddle(paddle, isLeft, chargeTime) {
-      const dir = isLeft ? 1 : -1;
+    // ─── ZONE-SPECIFIC ABILITIES ───
+    // Called when Space is held during paddle collision
+    function handleZoneAbility(paddle, zone, chargeTime) {
+      const dir = paddle.isLeft ? 1 : -1;
       const charge = chargeTime || 0;
 
-      const speed = W * BALL_SPEED * 1.15;
+      if (zone === 'box') {
+        // CATCH — hold the ball
+        ballState = paddle.isPlayer ? 'held_player' : 'held_ai';
+        holdPaddle = paddle;
+        holdTimer = 0;
+        aiHoldTimer = 0.4 + Math.random() * 0.8;
+        ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0; ball.curve = 0;
+        return;
+      }
 
-      // Arrow keys aim the shot (read at release)
+      // All other zones: immediate directed shot (no catch)
       let aimY = 0;
       if (paddle.isPlayer) {
         if (keys['ArrowUp'])   aimY = -0.6;
         if (keys['ArrowDown']) aimY =  0.6;
+      } else {
+        aimY = (Math.random() - 0.5) * 0.5;
       }
-      const angle = aimY;
 
-      ball.vx = Math.cos(angle) * speed * dir;
-      ball.vy = Math.sin(angle) * speed;
+      if (zone === 'def') {
+        // LOB CLEARANCE — high and long
+        const speed = W * BALL_SPEED;
+        ball.vx = Math.cos(aimY) * speed * dir;
+        ball.vy = Math.sin(aimY) * speed;
+        ball.vz = Math.max(charge, 0.2) * H * LOB_POWER;
+        ball.curve = 0;
+      } else if (zone === 'mid') {
+        // CURVING SHOT — ball curves in arrow direction
+        const speed = W * BALL_SPEED * 1.2;
+        ball.vx = Math.cos(aimY * 0.3) * speed * dir;
+        ball.vy = Math.sin(aimY * 0.3) * speed;
+        ball.vz = charge * H * LOB_POWER * 0.3;
+        // Curve: positive = curves down, negative = curves up
+        ball.curve = aimY * H * 1.5;  // strong lateral curve
+      } else if (zone === 'fwd') {
+        // POWER BLAST — fast rocket, charge = power, too much = over the bar
+        const power = Math.min(charge * 3, 2.0);  // sweet spot ~0.15-0.4s
+        const speed = W * BALL_SPEED * (1.0 + power * 0.8);
+        ball.vx = Math.cos(aimY * 0.5) * speed * dir;
+        ball.vy = Math.sin(aimY * 0.5) * speed;
+        // Too much charge = over the bar (high vz)
+        ball.vz = charge > 0.5 ? charge * H * LOB_POWER * 1.5 : charge * H * LOB_POWER * 0.2;
+        ball.curve = 0;
+      }
+
       ball.z = 0;
-
-      // Down = cancel lob (hard low drive), Up = boost lob
-      let lobMult = 1.0;
-      if (paddle.isPlayer) {
-        if (keys['ArrowDown']) lobMult = 0.0;  // hard flat shot
-        if (keys['ArrowUp'])   lobMult = 1.4;  // extra high lob
-      }
-      ball.vz = charge * H * LOB_POWER * lobMult;
-
       lastShotChargeTime = charge;
       currentMaxZ = 0;
-      ballState = 'live';
-      holdPaddle = null;
-      holdTimer = 0;
-    }
-
-    // ─── VOLLEY — first-time shot, no catch ───
-    // Space is held when ball contacts paddle = immediate directed shot
-    function volleyShot(paddle, isLeft) {
-      const dir = isLeft ? 1 : -1;
-      const speed = W * BALL_SPEED * 1.3;  // harder than a normal shot
-
-      // Direction from arrow keys at moment of contact
-      let aimY = 0;
-      if (keys['ArrowUp'])   aimY = -0.6;
-      if (keys['ArrowDown']) aimY =  0.6;
-      const angle = aimY;
-
-      ball.vx = Math.cos(angle) * speed * dir;
-      ball.vy = Math.sin(angle) * speed;
-
-      // Lob from charge, but Down = hard flat volley
-      ball.z = 0;
-      let lobMult = 1.0;
-      if (keys['ArrowDown']) lobMult = 0.0;
-      if (keys['ArrowUp'])   lobMult = 1.4;
-      ball.vz = spaceHeldTime * H * LOB_POWER * lobMult;
-
-      lastShotChargeTime = spaceHeldTime;
-      currentMaxZ = 0;
       spaceHeldTime = 0;
-      ballState = 'live';
-      holdPaddle = null;
     }
 
-    // ─── GK AI ───
-    function gkAI(team, skill, dt) {
-      const gk = team.gk;
-      if (ballState === 'on_gk' && serveFromLeft && team.isLeft) return;
+    // ─── AI PADDLE (right team — one paddle, full field movement) ───
+    function aiPaddle(paddle, dt) {
+      if (!ball || ballState === 'held_ai') return;  // AI handles held state in update()
 
-      const maxSpeed = H * GK_SPEED_RATIO * skill;
-      const cy = gk.y + gk.h / 2;
-      const onThisSide = team.isLeft ? (ball.vx < 0) : (ball.vx > 0);
-      const active = onThisSide || ballState !== 'live';
-      const target = active ? ball.y : H / 2;
-      const lag = active ? (1.0 - skill * 0.7) : 0.95;
-      const effective = cy + (target - cy) * (1 - lag);
-      const diff = effective - cy;
-      const move = Math.sign(diff) * Math.min(Math.abs(diff), maxSpeed * dt);
-      gk.y = clamp(gk.y + move, 0, H - gk.h);
-    }
-
-    // ─── OUTFIELD AI (right team's single paddle) ───
-    let aiShootTimer = 0;
-
-    function outfieldAI(paddle, dt) {
-      if (paddle.isPlayer) return;
-
-      // Get zone-based stats from current position
-      const identity = getZoneIdentity(paddle, rightTeam.data);
-      const stats = identity.stats;
-      const speed = H * OF_SPEED_RATIO * 0.7 * (0.6 + stats.speed * 0.8);
+      const speed = H * PADDLE_SPEED_RATIO * AI_SKILL;
       const cy = paddle.y + paddle.h / 2;
+      const cx = paddle.x + paddle.w / 2;
 
-      // Normal movement: track ball with reaction-based lag
-      const reactionMult = 0.5 + stats.reaction * 0.5;
-      let targetY = H / 2;
-      if (ballState === 'live') {
+      // Decide target position based on game state
+      let targetX, targetY;
+      const ballComingToUs = ball.vx > 0;
+      const ballInOurHalf = ball.x > W * 0.5;
+      const ballDangerous = ballComingToUs && ballInOurHalf;
+
+      if (ballDangerous || ballState !== 'live') {
+        // DEFEND — retreat toward box, track ball y
+        targetX = W * 0.55;  // near the box but not fully in
         targetY = ball.y;
+        // If ball is very close, go full keeper mode
+        if (ball.x > W * 0.75) {
+          targetX = W * 0.97;  // in the box
+        }
+      } else if (!ballInOurHalf) {
+        // ATTACK — push forward
+        targetX = W * 0.65;
+        targetY = ball.y;
+      } else {
+        // NEUTRAL — midfield positioning
+        targetX = W * 0.70;
+        targetY = H * 0.5;
       }
 
-      const diff = (targetY - cy) * reactionMult;
-      paddle.y += Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
-      paddle.y = clamp(paddle.y, 0, H - paddle.h);
+      // Move toward target
+      const dx = targetX - cx;
+      const dy = targetY - cy;
+      const lag = 1 - AI_SKILL * 0.6;
+      paddle.x += dx * (1 - lag) * dt * 3;
+      paddle.y += dy * (1 - lag) * dt * 3;
 
-      // X-movement: push forward when ball is on opponent side, retreat when defending
-      const ballOnThisSide = ball.x > W / 2;
-      const idealX = ballOnThisSide
-        ? paddle.homeX - 30
-        : paddle.homeX + 40;
-      const xSpeed = speed * 0.3;
-      paddle.x += Math.sign(idealX - paddle.x) * Math.min(Math.abs(idealX - paddle.x), xSpeed * dt);
-      paddle.x = clamp(paddle.x, W * 0.52, rightTeam.gk.x - paddle.w - 10);
+      // Clamp to right half
+      paddle.x = clamp(paddle.x, W * 0.50, W - paddle.w);
+      paddle.y = clamp(paddle.y, 0, H - paddle.h);
     }
 
     // ─── PADDLE COLLISION ───
@@ -500,12 +447,14 @@
           ball.y + ball.size / 2 > p.y &&
           ball.y - ball.size / 2 < p.y + p.h) {
 
-        if (p.isLeft || ball.x < p.x + p.w / 2) {
+        // Push ball out of paddle
+        if (p.isLeft) {
           ball.x = p.x + p.w + ball.size / 2 + 1;
         } else {
           ball.x = p.x - ball.size / 2 - 1;
         }
 
+        // Normal Pong deflection
         const hitPos = (ball.y - (p.y + p.h / 2)) / (p.h / 2);
         const angle = clamp(hitPos, -1, 1) * MAX_BOUNCE_ANGLE;
         const currentSpeed = Math.hypot(ball.vx, ball.vy);
@@ -514,6 +463,7 @@
 
         ball.vx = Math.cos(angle) * newSpeed * deflectDir;
         ball.vy = Math.sin(angle) * newSpeed;
+        ball.curve = 0;
         if (p.isPlayer) ball.vy += playerVelY * 0.3;
 
         return true;
@@ -578,6 +528,14 @@
         ball.x += ball.vx * subDt;
         ball.y += ball.vy * subDt;
 
+        // Apply curve (MID zone curving shot)
+        if (ball.curve !== 0) {
+          ball.vy += ball.curve * subDt;
+          ball.curve *= 0.98;  // decay curve over time
+          if (Math.abs(ball.curve) < 1) ball.curve = 0;
+        }
+
+        // Z-axis (lob)
         if (ball.z > 0 || ball.vz > 0) {
           ball.z += ball.vz * subDt;
           ball.vz -= GRAVITY * subDt;
@@ -585,6 +543,7 @@
           if (ball.z > currentMaxZ) currentMaxZ = ball.z;
         }
 
+        // Wall bounces (top/bottom)
         if (ball.y - ball.size / 2 < 0) {
           ball.y = ball.size / 2;
           ball.vy = Math.abs(ball.vy) * 0.97;
@@ -598,66 +557,43 @@
         if (!airborne) checkGoalPosts();
 
         if (!airborne) {
-          // All paddles deflect like Pong — no catching for outfield
-          // GK can catch (probability-based), outfield = pure bounce
           for (const p of allPaddles) {
             if (hitPaddle(p)) {
-              // GK catch: sometimes the GK traps the ball
-              if (p.isGK) {
-                const catchChance = p.isLeft ? 0.6 : 0.5;  // player GK catches more often
-                if (Math.random() < catchChance) {
-                  const isLeft = p.isLeft;
-                  serveFromLeft = isLeft;
-                  ballState = 'on_gk';
-                  ball.vx = 0; ball.vy = 0; ball.z = 0; ball.vz = 0;
-                  goalPause = 0.3;
-                  lastShotMaxZ = currentMaxZ;
-                  currentMaxZ = 0;
+              // Get zone identity for this paddle
+              const td = p.isLeft ? leftTeam.data : rightTeam.data;
+              const identity = getZoneIdentity(p, td);
+
+              // Space held = zone-specific ability
+              if (spaceDown && p.isPlayer) {
+                handleZoneAbility(p, identity.zone, spaceHeldTime);
+                return;  // ability may change ball state
+              }
+
+              // AI: use zone ability occasionally
+              if (!p.isPlayer) {
+                const zone = identity.zone;
+                if (zone === 'box') {
+                  // AI always catches in the box
+                  handleZoneAbility(p, 'box', 0);
+                  return;
+                } else if (Math.random() < 0.3) {
+                  // 30% chance AI uses zone ability
+                  handleZoneAbility(p, zone, 0.1 + Math.random() * 0.3);
                   return;
                 }
-                // GK didn't catch — ball already deflected by hitPaddle
               }
 
-              // If Space held during deflection: shot/lob with direction
-              if (spaceDown && p.isPlayer) {
-                const charge = spaceHeldTime;
-                const speedMult = shotSpeedMult(charge);
-
-                // Direction: arrows steer the shot
-                let aimY = 0;
-                if (keys['ArrowUp'])   aimY = -0.7;
-                if (keys['ArrowDown']) aimY = 0.7;
-
-                // Apply shot power + direction
-                const curSpeed = Math.hypot(ball.vx, ball.vy);
-                const boostedSpeed = curSpeed * speedMult;
-                const dir = ball.vx > 0 ? 1 : -1;
-                ball.vx = Math.cos(aimY) * boostedSpeed * dir;
-                ball.vy = Math.sin(aimY) * boostedSpeed;
-
-                // Lob height from charge
-                ball.vz = charge * H * LOB_POWER;
-                spaceHeldTime = 0;
-              }
-
-              // AI forward: small random lob occasionally
-              if (!p.isGK && !p.isPlayer && !p.isLeft) {
-                if (Math.random() < 0.2) {
-                  ball.vz = (0.05 + Math.random() * 0.15) * H * LOB_POWER;
-                }
-              }
-
-              break;  // only process first paddle hit per step
+              break;
             }
           }
         }
 
         const gt = goalTop();
         const gb = goalBottom();
-
-        // Goals — lobs CAN score (airborne or not)
         const goalLineL = W * GOAL_LINE_RATIO;
         const goalLineR = W * (1 - GOAL_LINE_RATIO);
+
+        // Goal scoring
         if (ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
           scoreR++;
           resetAfterGoal(true);
@@ -670,30 +606,28 @@
           return;
         }
 
-        // Wall bounce outside goal mouth (and airborne over goal)
-        const wbL = W * GOAL_LINE_RATIO;
-        const wbR = W * (1 - GOAL_LINE_RATIO);
+        // Wall bounce outside goal mouth
         if (ball.y <= gt || ball.y >= gb || airborne) {
-          if (ball.x - ball.size / 2 < wbL) {
-            ball.x = wbL + ball.size / 2;
+          if (ball.x - ball.size / 2 < goalLineL) {
+            ball.x = goalLineL + ball.size / 2;
             ball.vx = Math.abs(ball.vx) * 0.7;
           }
-          if (ball.x + ball.size / 2 > wbR) {
-            ball.x = wbR - ball.size / 2;
+          if (ball.x + ball.size / 2 > goalLineR) {
+            ball.x = goalLineR - ball.size / 2;
             ball.vx = -Math.abs(ball.vx) * 0.7;
           }
         }
       }
     }
 
-    // ─── STICK BALL ───
-    function stickBallToFront(paddle, isLeft) {
-      if (isLeft) {
+    // ─── STICK BALL TO PADDLE FRONT ───
+    function stickBallToFront(paddle) {
+      if (paddle.isLeft) {
         ball.x = paddle.x + paddle.w + ball.size / 2 + 2;
       } else {
         ball.x = paddle.x - ball.size / 2 - 2;
       }
-      ball.y = paddle.y + paddle.h / 2 + holdOffsetY;
+      ball.y = paddle.y + paddle.h / 2;
       ball.y = clamp(ball.y, ball.size / 2, H - ball.size / 2);
     }
 
@@ -706,75 +640,57 @@
 
       if (!leftTeam || !ball) return;
 
-      // Player speed varies by zone identity
-      const playerIdentity = leftTeam.mainFwd ? getZoneIdentity(leftTeam.mainFwd, leftTeam.data) : null;
-      const pSpeedMult = playerIdentity ? (0.6 + playerIdentity.stats.speed * 0.8) : 1.0;
-      const pSpeed = H * OF_SPEED_RATIO * pSpeedMult;
-      const gkSpeed = H * GK_SPEED_RATIO;
+      const playerPaddle = leftTeam.paddle;
+      const aiPad = rightTeam.paddle;
+      const pSpeed = H * PADDLE_SPEED_RATIO;
 
-      const playerControlsGK = (ballState === 'on_gk' && serveFromLeft && goalPause <= 0);
-      const playerPaddle = leftTeam.mainFwd;
-      const gk = leftTeam.gk;
-
-      // When Space is held: arrows AIM the shot, don't move the paddle
-      if (spaceDown && ballState === 'on_gk') {
-        // Arrows are read at shot time — paddle stays still
-      } else if (playerControlsGK) {
-        if (keys['ArrowUp'])   gk.y -= gkSpeed * dt;
-        if (keys['ArrowDown']) gk.y += gkSpeed * dt;
-        gk.y = clamp(gk.y, 0, H - gk.h);
-      } else if (playerPaddle) {
+      // ── Player movement (always controls one paddle, free movement in left half) ──
+      if (playerPaddle) {
         if (keys['ArrowUp'])    playerPaddle.y -= pSpeed * dt;
         if (keys['ArrowDown'])  playerPaddle.y += pSpeed * dt;
         if (keys['ArrowLeft'])  playerPaddle.x -= pSpeed * dt;
         if (keys['ArrowRight']) playerPaddle.x += pSpeed * dt;
-        playerPaddle.x = clamp(playerPaddle.x, gk.x + gk.w + 10, W * 0.48);
+        playerPaddle.x = clamp(playerPaddle.x, 0, W * 0.50 - playerPaddle.w);
         playerPaddle.y = clamp(playerPaddle.y, 0, H - playerPaddle.h);
-      }
 
-      if (playerPaddle) {
         playerVelY = (playerPaddle.y - playerPrevY) / Math.max(dt, 0.001);
         playerPrevY = playerPaddle.y;
       }
 
-      if (!playerControlsGK) gkAI(leftTeam, GK_SKILL_LEFT, dt);
-      gkAI(rightTeam, GK_SKILL_RIGHT, dt);
-      rightTeam.players.forEach(p => outfieldAI(p, dt));
+      // ── AI movement ──
+      if (aiPad) aiPaddle(aiPad, dt);
 
       if (goalPause > 0) { goalPause -= dt; return; }
 
-      if (ballState === 'on_gk') {
-        const servingTeam = serveFromLeft ? leftTeam : rightTeam;
-        const sgk = servingTeam.gk;
-        ball.x = serveFromLeft ? sgk.x + sgk.w + ball.size / 2 + 2
-                               : sgk.x - ball.size / 2 - 2;
-        ball.y = sgk.y + sgk.h / 2;
+      // ── Track space charge ──
+      if (spaceDown) spaceHeldTime += dt;
 
-        if (serveFromLeft) {
-          if (spaceDown) spaceHeldTime += dt;
-          if (consumeRelease('Space')) {
-            serveFromGK(spaceHeldTime);
-            spaceHeldTime = 0;
-            return;
-          }
-        } else {
-          // In physics mode, always serve from left (no AI serve)
-          if (gameMode === 'physics') {
-            // Ball on right GK means player scored — just reset to left
-            resetAfterGoal(true);
-            return;
-          }
-          if (aiServeTimer <= 0) aiServeTimer = 0.6 + Math.random() * 0.8;
-          aiServeTimer -= dt;
-          if (aiServeTimer <= 0) serveFromGK(Math.random() * 0.15);
+      // ── Ball held by player (caught in box) ──
+      if (ballState === 'held_player') {
+        stickBallToFront(holdPaddle);
+        holdTimer += dt;
+        if (consumeRelease('Space') || holdTimer >= HOLD_TIME_LIMIT) {
+          releaseFromHold(holdPaddle, spaceHeldTime);
+          spaceHeldTime = 0;
         }
         return;
       }
 
-      // Track space held time for lob control during live play
-      if (spaceDown && ballState === 'live') {
-        spaceHeldTime += dt;
+      // ── Ball held by AI ──
+      if (ballState === 'held_ai') {
+        stickBallToFront(holdPaddle);
+        holdTimer += dt;
+        aiHoldTimer -= dt;
+        if (aiHoldTimer <= 0 || holdTimer >= HOLD_TIME_LIMIT) {
+          releaseFromHold(holdPaddle, 0.1 + Math.random() * 0.2);
+        }
+        return;
       }
+
+      // ── Ball is live ──
+      // Store trail position
+      ballTrail.push({ x: ball.x, y: ball.y });
+      if (ballTrail.length > 12) ballTrail.shift();
 
       physicsStep(dt);
     }
@@ -785,335 +701,122 @@
 
     // ─── DRAW FIELD ───
     function drawField() {
-      if (gameMode === 'physics') {
-        // Physics lab: dark green, minimal markings
-        ctx.fillStyle = '#0a1f0a';
-        ctx.fillRect(0, 0, W, H);
-        ctx.strokeStyle = '#1a4d1a';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([8, 8]);
-        ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.beginPath(); ctx.arc(W / 2, H / 2, H * 0.10, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeRect(1, 1, W - 2, H - 2);
-
-        // Physics lab goals (simple)
-        const gt = goalTop(), gb = goalBottom();
-        ctx.fillStyle = '#fff';
-        [0, 1].forEach(side => {
-          const isLeft = side === 0;
-          ctx.fillRect(isLeft ? 0 : W - 3, gt, 3, gb - gt);
-        });
-        return;
-      }
-
-      // ========== MATCH MODE: Perspective field (Atari coffee table style) ==========
-
-      // Dark background (like arcade coffee table)
-      ctx.fillStyle = '#0a0a0a';
+      // ========== Dark surface — neon arcade table ==========
+      ctx.fillStyle = '#080808';
       ctx.fillRect(0, 0, W, H);
 
-      // Fly-in animation: interpolate from distant view to normal
-      const fi = flyInProgress;  // 0=far, 1=normal
-      const fiScale = 0.3 + fi * 0.7;  // start at 30% size
-      const fiOffY = (1 - fi) * H * 0.15;  // drift down as we approach
+      // Reset perspective to identity (flat top-down)
+      _toScreen = (gx, gy) => ({ x: gx, y: gy });
+      _perspScale = () => 1;
 
-      // Perspective field corners (wider at bottom = closer to viewer)
-      const cxF = W * 0.5, cyF = H * 0.47;
-      const pTopY = cyF + (H * 0.14 - cyF) * fiScale + fiOffY;
-      const pBotY = cyF + (H * 0.80 - cyF) * fiScale + fiOffY;
-      const pTopL = cxF + (W * 0.22 - cxF) * fiScale;
-      const pTopR = cxF + (W * 0.78 - cxF) * fiScale;
-      const pBotL = cxF + (W * 0.04 - cxF) * fiScale;
-      const pBotR = cxF + (W * 0.96 - cxF) * fiScale;
-      const baseH = H * 0.12 * fiScale;
+      const gt = goalTop(), gb = goalBottom();
+      const glL = W * GOAL_LINE_RATIO;
+      const glR = W * (1 - GOAL_LINE_RATIO);
 
-      // Helper: interpolate field edges at a given t (0=top, 1=bottom)
-      function fieldEdge(t) {
-        const y = pTopY + t * (pBotY - pTopY);
-        const l = pTopL + t * (pBotL - pTopL);
-        const r = pTopR + t * (pBotR - pTopR);
-        return { y, l, r };
-      }
+      ctx.save();
 
-      // Map game coords to screen perspective
-      function toScreen(gx, gy) {
-        const ty = gy / H;
-        const e = fieldEdge(ty);
-        return { x: e.l + (gx / W) * (e.r - e.l), y: e.y };
-      }
+      // ─── Neon field border glow ───
+      // Left half: team left color, right half: team right color
+      const borderW = 3;
+      ctx.shadowBlur = 15;
 
-      // Scale factor at a given game-y
-      function perspScaleAt(gy) {
-        const ty = gy / H;
-        const e = fieldEdge(ty);
-        return (e.r - e.l) / W;
-      }
-
-      // Store for other draw functions
-      _toScreen = toScreen;
-      _perspScale = perspScaleAt;
-
-      // --- 3D base (front face below field) — dark wood tone ---
-      ctx.fillStyle = '#2a1f18';
+      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.strokeStyle = TEAM_LEFT.primary;
+      ctx.lineWidth = borderW;
       ctx.beginPath();
-      ctx.moveTo(pBotL, pBotY);
-      ctx.lineTo(pBotR, pBotY);
-      ctx.lineTo(pBotR + baseH * 0.15, pBotY + baseH);
-      ctx.lineTo(pBotL + baseH * 0.15, pBotY + baseH);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(W / 2, 0); ctx.lineTo(0, 0); ctx.lineTo(0, H); ctx.lineTo(W / 2, H);
+      ctx.stroke();
 
-      // Right side face
-      ctx.fillStyle = '#1e1510';
+      ctx.shadowColor = TEAM_RIGHT.primary;
+      ctx.strokeStyle = TEAM_RIGHT.primary;
       ctx.beginPath();
-      ctx.moveTo(pTopR, pTopY);
-      ctx.lineTo(pBotR, pBotY);
-      ctx.lineTo(pBotR + baseH * 0.15, pBotY + baseH);
-      ctx.lineTo(pTopR + baseH * 0.08, pTopY + baseH * 0.6);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(W / 2, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H); ctx.lineTo(W / 2, H);
+      ctx.stroke();
 
-      // --- Dark brown field border (arcade table frame) ---
-      ctx.fillStyle = '#3a2e24';
-      ctx.beginPath();
-      ctx.moveTo(pTopL, pTopY); ctx.lineTo(pTopR, pTopY);
-      ctx.lineTo(pBotR, pBotY); ctx.lineTo(pBotL, pBotY);
-      ctx.closePath();
-      ctx.fill();
-
-      // --- Green grass (slightly inset from white border) ---
-      const inset = 0.012;
-      const gTopL = pTopL + (pTopR - pTopL) * inset;
-      const gTopR = pTopR - (pTopR - pTopL) * inset;
-      const gBotL = pBotL + (pBotR - pBotL) * inset;
-      const gBotR = pBotR - (pBotR - pBotL) * inset;
-      const gTopY = pTopY + (pBotY - pTopY) * inset;
-      const gBotY = pBotY - (pBotY - pTopY) * inset;
-
-      ctx.fillStyle = '#699a55';
-      ctx.beginPath();
-      ctx.moveTo(gTopL, gTopY); ctx.lineTo(gTopR, gTopY);
-      ctx.lineTo(gBotR, gBotY); ctx.lineTo(gBotL, gBotY);
-      ctx.closePath();
-      ctx.fill();
-
-      // --- Alternating grass stripes (perspective trapezoids) ---
-      const stripeCount = 16;
-      for (let i = 0; i < stripeCount; i += 2) {
-        const t1 = i / stripeCount;
-        const t2 = (i + 1) / stripeCount;
-        const sTopL1 = gTopL + (gTopR - gTopL) * t1;
-        const sTopL2 = gTopL + (gTopR - gTopL) * t2;
-        const sBotL1 = gBotL + (gBotR - gBotL) * t1;
-        const sBotL2 = gBotL + (gBotR - gBotL) * t2;
-        ctx.fillStyle = '#357f35';
-        ctx.beginPath();
-        ctx.moveTo(sTopL1, gTopY); ctx.lineTo(sTopL2, gTopY);
-        ctx.lineTo(sBotL2, gBotY); ctx.lineTo(sBotL1, gBotY);
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      // --- White field markings in perspective ---
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2.5;
+      // ─── Neon field lines ───
+      ctx.shadowColor = 'rgba(100,200,255,0.6)';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = 'rgba(100,200,255,0.35)';
+      ctx.lineWidth = 1.5;
       ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
 
-      // Center line (vertical in game = perspective line on screen)
-      const clTop = toScreen(W / 2, 0);
-      const clBot = toScreen(W / 2, H);
-      ctx.beginPath();
-      ctx.moveTo(clTop.x, clTop.y); ctx.lineTo(clBot.x, clBot.y);
-      ctx.stroke();
+      // Center line (dashed)
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+      ctx.setLineDash([]);
 
-      // Center circle (perspective ellipse — sample points around circle)
-      const ccR = H * 0.13;
-      ctx.beginPath();
-      for (let a = 0; a <= Math.PI * 2; a += 0.1) {
-        const gx = W / 2 + Math.cos(a) * ccR * (W / H);
-        const gy = H / 2 + Math.sin(a) * ccR;
-        const sp = toScreen(gx, gy);
-        if (a === 0) ctx.moveTo(sp.x, sp.y);
-        else ctx.lineTo(sp.x, sp.y);
-      }
-      ctx.closePath();
-      ctx.stroke();
+      // Center circle
+      const ccR = H * 0.12;
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, ccR, 0, Math.PI * 2); ctx.stroke();
 
       // Center spot
-      const cs = toScreen(W / 2, H / 2);
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(cs.x, cs.y, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(100,200,255,0.5)';
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, 3, 0, Math.PI * 2); ctx.fill();
 
-      // Penalty areas (perspective rectangles)
-      function perspRect(gx, gy, gw, gh) {
-        const tl = toScreen(gx, gy);
-        const tr = toScreen(gx + gw, gy);
-        const br = toScreen(gx + gw, gy + gh);
-        const bl = toScreen(gx, gy + gh);
-        ctx.beginPath();
-        ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y);
-        ctx.lineTo(br.x, br.y); ctx.lineTo(bl.x, bl.y);
-        ctx.closePath();
-        ctx.stroke();
-      }
-
+      // Penalty areas
       const penW = W * 0.14;
       const penH = H * 0.56;
       const penTop = (H - penH) / 2;
-      perspRect(0, penTop, penW, penH);
-      perspRect(W - penW, penTop, penW, penH);
+      ctx.strokeRect(glL, penTop, penW, penH);
+      ctx.strokeRect(glR - penW, penTop, penW, penH);
 
       // Goal areas
       const gaW = penW * 0.42;
       const gaH = H * 0.32;
       const gaTop = (H - gaH) / 2;
-      perspRect(0, gaTop, gaW, gaH);
-      perspRect(W - gaW, gaTop, gaW, gaH);
+      ctx.strokeRect(glL, gaTop, gaW, gaH);
+      ctx.strokeRect(glR - gaW, gaTop, gaW, gaH);
 
-      // Penalty arcs
+      // ─── Neon goal mouths ───
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+
+      // Left goal
       ctx.beginPath();
-      for (let a = -0.85; a <= 0.85; a += 0.1) {
-        const gx = penW * 0.75 + Math.cos(a) * ccR * 0.55 * (W / H);
-        const gy = H / 2 + Math.sin(a) * ccR * 0.55;
-        const sp = toScreen(gx, gy);
-        if (a <= -0.85) ctx.moveTo(sp.x, sp.y);
-        else ctx.lineTo(sp.x, sp.y);
-      }
-      ctx.stroke();
-      ctx.beginPath();
-      for (let a = Math.PI - 0.85; a <= Math.PI + 0.85; a += 0.1) {
-        const gx = W - penW * 0.75 + Math.cos(a) * ccR * 0.55 * (W / H);
-        const gy = H / 2 + Math.sin(a) * ccR * 0.55;
-        const sp = toScreen(gx, gy);
-        if (a <= Math.PI - 0.85) ctx.moveTo(sp.x, sp.y);
-        else ctx.lineTo(sp.x, sp.y);
-      }
+      ctx.moveTo(glL, gt); ctx.lineTo(glL, gb);
       ctx.stroke();
 
-      // ========== Goals (3D wireframe in perspective — ON the grass) ==========
-      const gt = goalTop();
-      const gb = goalBottom();
-      const goalNetW = W * 0.05;   // how far back the net extends in game-x
-      const goalH3d = 55;          // visual height of goal above surface
+      // Right goal
+      ctx.beginPath();
+      ctx.moveTo(glR, gt); ctx.lineTo(glR, gb);
+      ctx.stroke();
 
-      [0, 1].forEach(side => {
-        const isLeft = side === 0;
-        const postGX = isLeft ? W * GOAL_LINE_RATIO : W * (1 - GOAL_LINE_RATIO);
-        const backGX = isLeft ? postGX - goalNetW : postGX + goalNetW;
-
-        // 4 base corners (on field surface)
-        const ftl = toScreen(postGX, gt);
-        const fbl = toScreen(postGX, gb);
-        const btl = toScreen(backGX, gt);
-        const bbl = toScreen(backGX, gb);
-
-        // 4 top corners (raised by goalH3d)
-        const ftlT = { x: ftl.x, y: ftl.y - goalH3d };
-        const fblT = { x: fbl.x, y: fbl.y - goalH3d * 1.1 };
-        const btlT = { x: btl.x, y: btl.y - goalH3d * 0.7 };
-        const bblT = { x: bbl.x, y: bbl.y - goalH3d * 0.8 };
-
-        // Net mesh (gray/silver)
-        ctx.strokeStyle = 'rgba(160,155,148,0.4)';
-        ctx.lineWidth = 0.7;
-        ctx.lineCap = 'butt';
-
-        // Side net lines (vertical strips connecting front post to back)
-        const netLines = 6;
-        for (let i = 0; i <= netLines; i++) {
-          const t = i / netLines;
-          // Top bar
-          const tx = ftlT.x + (btlT.x - ftlT.x) * t;
-          const ty = ftlT.y + (btlT.y - ftlT.y) * t;
-          // Bottom bar
-          const bx = ftl.x + (btl.x - ftl.x) * t;
-          const by = ftl.y + (btl.y - ftl.y) * t;
-          ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(bx, by); ctx.stroke();
-
-          // Same for bottom post side
-          const tx2 = fblT.x + (bblT.x - fblT.x) * t;
-          const ty2 = fblT.y + (bblT.y - fblT.y) * t;
-          const bx2 = fbl.x + (bbl.x - fbl.x) * t;
-          const by2 = fbl.y + (bbl.y - fbl.y) * t;
-          ctx.beginPath(); ctx.moveTo(tx2, ty2); ctx.lineTo(bx2, by2); ctx.stroke();
-        }
-
-        // Back net (vertical lines across back)
-        const backLines = 8;
-        for (let i = 0; i <= backLines; i++) {
-          const t = i / backLines;
-          const topX = btlT.x + (bblT.x - btlT.x) * t;
-          const topY = btlT.y + (bblT.y - btlT.y) * t;
-          const botX = btl.x + (bbl.x - btl.x) * t;
-          const botY = btl.y + (bbl.y - btl.y) * t;
-          ctx.beginPath(); ctx.moveTo(topX, topY); ctx.lineTo(botX, botY); ctx.stroke();
-        }
-
-        // Horizontal net lines on back
-        for (let i = 0; i <= 4; i++) {
-          const t = i / 4;
-          ctx.beginPath();
-          ctx.moveTo(btlT.x + (btl.x - btlT.x) * t, btlT.y + (btl.y - btlT.y) * t);
-          ctx.lineTo(bblT.x + (bbl.x - bblT.x) * t, bblT.y + (bbl.y - bblT.y) * t);
-          ctx.stroke();
-        }
-
-        // Top net (roof)
-        for (let i = 0; i <= backLines; i++) {
-          const t = i / backLines;
-          const fX = ftlT.x + (fblT.x - ftlT.x) * t;
-          const fY = ftlT.y + (fblT.y - ftlT.y) * t;
-          const bX = btlT.x + (bblT.x - btlT.x) * t;
-          const bY = btlT.y + (bblT.y - btlT.y) * t;
-          ctx.beginPath(); ctx.moveTo(fX, fY); ctx.lineTo(bX, bY); ctx.stroke();
-        }
-
-        // Goal frame (gray/silver posts + crossbar)
-        ctx.strokeStyle = '#a09b94';
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        // Front posts
-        ctx.beginPath(); ctx.moveTo(ftl.x, ftl.y); ctx.lineTo(ftlT.x, ftlT.y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(fbl.x, fbl.y); ctx.lineTo(fblT.x, fblT.y); ctx.stroke();
-        // Crossbar
-        ctx.beginPath(); ctx.moveTo(ftlT.x, ftlT.y); ctx.lineTo(fblT.x, fblT.y); ctx.stroke();
-        // Back posts
-        ctx.strokeStyle = 'rgba(160,155,148,0.5)';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(btl.x, btl.y); ctx.lineTo(btlT.x, btlT.y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(bbl.x, bbl.y); ctx.lineTo(bblT.x, bblT.y); ctx.stroke();
-        // Back crossbar
-        ctx.beginPath(); ctx.moveTo(btlT.x, btlT.y); ctx.lineTo(bblT.x, bblT.y); ctx.stroke();
-        // Depth bars connecting front to back
-        ctx.beginPath(); ctx.moveTo(ftlT.x, ftlT.y); ctx.lineTo(btlT.x, btlT.y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(fblT.x, fblT.y); ctx.lineTo(bblT.x, bblT.y); ctx.stroke();
-      });
+      ctx.restore();
     }
 
+    // ─── NEON PADDLE ───
     function drawPaddle(p) {
-      const isMatch = gameMode !== 'physics';
       const team = p.isLeft ? leftTeam : rightTeam;
 
       // Zone-based identity
-      let displayNum, displayName;
-      if (p.isGK) {
-        displayNum = p.num;
-        displayName = p.name;
-      } else if (team) {
+      let displayNum, displayName, zone;
+      if (team) {
         const identity = getZoneIdentity(p, team.data);
         displayNum = identity.player.num;
         displayName = identity.player.name;
+        zone = identity.zone;
       } else {
-        displayNum = p.num;
-        displayName = p.name;
+        displayNum = '?';
+        displayName = '???';
+        zone = 'fwd';
       }
 
-      if (!isMatch) {
-        // Physics lab: simple white rectangle
-        ctx.fillStyle = '#fff';
+      // Neon color: team color normally, distinct keeper color in box
+      const teamColor = team ? team.data.primary : '#fff';
+      const isKeeper = zone === 'box';
+      const neonColor = isKeeper ? '#00ff88' : teamColor;
+      const glowIntensity = p.isPlayer ? 20 : 12;
+
+      if (gameMode === 'physics') {
+        // Physics lab: simple neon rectangle
+        ctx.save();
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = glowIntensity;
+        ctx.fillStyle = neonColor;
         ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.restore();
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
         ctx.font = 'bold 9px monospace';
         ctx.textAlign = 'center';
@@ -1121,255 +824,135 @@
         return;
       }
 
-      // ===== Match mode: Chunky white 3D block (Atari coffee table) with team color stripes =====
-      const kit = (team && team.data.kit) ? team.data.kit : null;
-      const teamColor = kit ? kit.jersey : '#003DA5';
-      const blockH = 28;
+      // ===== Match mode: Neon rectangle with glow =====
+      ctx.save();
 
-      // Paddle game-space corners
-      const gx1 = p.x, gx2 = p.x + p.w;
-      const gy1 = p.y, gy2 = p.y + p.h;
+      // Multiple glow passes for intensity
+      for (let i = 0; i < 3; i++) {
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = glowIntensity + i * 8;
+        ctx.fillStyle = i === 2 ? neonColor : 'rgba(0,0,0,0)';
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+      }
 
-      // Map to screen perspective
-      const tl = _toScreen(gx1, gy1);
-      const tr = _toScreen(gx2, gy1);
-      const br = _toScreen(gx2, gy2);
-      const bl = _toScreen(gx1, gy2);
+      // Bright core
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = 0.4;
+      ctx.fillRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+      ctx.globalAlpha = 1;
 
-      // Top face (raised by blockH)
-      const scale = _perspScale(gy1);
-      const bh = blockH * scale;
-      const tlT = { x: tl.x, y: tl.y - bh };
-      const trT = { x: tr.x, y: tr.y - bh };
-      const brT = { x: br.x, y: br.y - bh * (_perspScale(gy2) / scale) };
-      const blT = { x: bl.x, y: bl.y - bh * (_perspScale(gy2) / scale) };
+      ctx.restore();
 
-      // Front face (medium gray — shadow side)
-      ctx.fillStyle = '#c8c4be';
-      ctx.beginPath();
-      ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y);
-      ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Right side face (darker gray)
-      ctx.fillStyle = '#b0aca6';
-      ctx.beginPath();
-      ctx.moveTo(tr.x, tr.y); ctx.lineTo(br.x, br.y);
-      ctx.lineTo(brT.x, brT.y); ctx.lineTo(trT.x, trT.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Top face (bright white — stands out on dark table)
-      ctx.fillStyle = '#f5f2ed';
-      ctx.beginPath();
-      ctx.moveTo(tlT.x, tlT.y); ctx.lineTo(trT.x, trT.y);
-      ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Two team color stripes on the top face
-      const stripeH = 0.15;  // stripe is 15% of paddle height from each end
-      // Stripe 1 (near top of paddle)
-      const s1t1 = stripeH;
-      const s1t2 = stripeH + 0.08;
-      const s1tl = lerpPt(tlT, blT, s1t1);
-      const s1tr = lerpPt(trT, brT, s1t1);
-      const s1bl = lerpPt(tlT, blT, s1t2);
-      const s1br = lerpPt(trT, brT, s1t2);
-      ctx.fillStyle = teamColor;
-      ctx.beginPath();
-      ctx.moveTo(s1tl.x, s1tl.y); ctx.lineTo(s1tr.x, s1tr.y);
-      ctx.lineTo(s1br.x, s1br.y); ctx.lineTo(s1bl.x, s1bl.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Stripe 2 (near bottom of paddle)
-      const s2t1 = 1 - stripeH - 0.08;
-      const s2t2 = 1 - stripeH;
-      const s2tl = lerpPt(tlT, blT, s2t1);
-      const s2tr = lerpPt(trT, brT, s2t1);
-      const s2bl = lerpPt(tlT, blT, s2t2);
-      const s2br = lerpPt(trT, brT, s2t2);
-      ctx.fillStyle = teamColor;
-      ctx.beginPath();
-      ctx.moveTo(s2tl.x, s2tl.y); ctx.lineTo(s2tr.x, s2tr.y);
-      ctx.lineTo(s2br.x, s2br.y); ctx.lineTo(s2bl.x, s2bl.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Subtle outline
-      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(tlT.x, tlT.y); ctx.lineTo(trT.x, trT.y);
-      ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
-      ctx.closePath();
-      ctx.stroke();
-
-      // Label below block: #NUM NAME
-      const fontSize = Math.max(7, Math.round(9 * scale));
-      ctx.fillStyle = 'rgba(200,195,190,0.7)';
-      ctx.font = `bold ${fontSize}px monospace`;
+      // Label above: #NUM NAME (glowing)
+      ctx.save();
+      ctx.shadowColor = neonColor;
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = neonColor;
+      ctx.font = 'bold 8px monospace';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const labelY = Math.max(bl.y, br.y) + 4;
-      ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, (bl.x + br.x) / 2, labelY);
+      ctx.fillText(`#${displayNum}`, p.x + p.w / 2, p.y - 6);
+      ctx.restore();
     }
 
     function lerpPt(a, b, t) {
       return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
     }
 
-    function darkenColor(hex, factor) {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      return `rgb(${Math.round(r * factor)},${Math.round(g * factor)},${Math.round(b * factor)})`;
-    }
-
+    // ─── NEON BALL WITH TRAIL ───
     function drawBall() {
       if (goalPause > 0) return;
       const zPx = ball.z;
-      const isMatch = gameMode !== 'physics';
+      const r = ball.size / 2 * (1 + zPx / 300);
+      const bx = ball.x;
+      const by = ball.y - zPx;
 
-      if (!isMatch) {
-        // Physics lab: simple outline circle
-        const zScale = 1 + zPx / 300;
-        const drawSize = ball.size * zScale;
-        if (zPx > 2) {
-          const shadowAlpha = Math.max(0.04, 0.2 - zPx / 500);
-          const shadowSpread = 1 + zPx / 50;
-          ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
-          const sw = ball.size * shadowSpread;
-          const sh = ball.size * shadowSpread * 0.4;
-          ctx.beginPath();
-          ctx.ellipse(ball.x, ball.y + zPx * 0.12, sw / 2, sh / 2, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y - zPx, drawSize / 2, 0, Math.PI * 2);
-        ctx.stroke();
-        return;
-      }
-
-      // Match mode: perspective ball — shiny football
-      const sp = _toScreen(ball.x, ball.y);
-      const scale = _perspScale(ball.y);
-      const drawR = ball.size * scale * (1 + zPx / 300);
-      const r = drawR * 0.85;
-
-      // Ground shadow
+      // Ground shadow when airborne
       if (zPx > 2) {
-        const shadowAlpha = Math.max(0.05, 0.3 - zPx / 350);
+        const shadowAlpha = Math.max(0.05, 0.2 - zPx / 400);
         ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
         ctx.beginPath();
-        ctx.ellipse(sp.x, sp.y, r * 1.4, r * 0.55, 0, 0, Math.PI * 2);
+        ctx.ellipse(ball.x, ball.y, r * 1.5, r * 0.5, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      const bx = sp.x;
-      const by = sp.y - zPx * scale;
-
-      // Ball body — white with radial gradient for shine
-      const grad = ctx.createRadialGradient(bx - r * 0.3, by - r * 0.3, r * 0.1, bx, by, r);
-      grad.addColorStop(0, '#fff');
-      grad.addColorStop(0.5, '#f0ede8');
-      grad.addColorStop(0.85, '#d8d4ce');
-      grad.addColorStop(1, '#b0aca6');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(bx, by, r, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Pentagon pattern (football look) — small dark patches
-      ctx.fillStyle = 'rgba(40,35,30,0.55)';
-      const pentR = r * 0.28;
-      // Center pentagon
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-        const px = bx + Math.cos(a) * pentR;
-        const py = by + Math.sin(a) * pentR;
-        if (i === 0) ctx.beginPath(), ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      // Outer pentagons (partial, just hints)
-      const outerAngles = [0, Math.PI * 0.6, Math.PI * 1.2, Math.PI * 1.55, Math.PI * 0.3];
-      ctx.fillStyle = 'rgba(40,35,30,0.3)';
-      outerAngles.forEach(oa => {
-        const cx2 = bx + Math.cos(oa) * r * 0.58;
-        const cy2 = by + Math.sin(oa) * r * 0.58;
-        ctx.beginPath();
-        for (let i = 0; i < 5; i++) {
-          const a = (i / 5) * Math.PI * 2 + oa;
-          const px = cx2 + Math.cos(a) * pentR * 0.6;
-          const py = cy2 + Math.sin(a) * pentR * 0.6;
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+      // Ball trail (fading positions)
+      if (gameMode !== 'physics') {
+        for (let i = 0; i < ballTrail.length; i++) {
+          const t = ballTrail[i];
+          const alpha = (i / ballTrail.length) * 0.3;
+          const tr = r * (0.3 + (i / ballTrail.length) * 0.5);
+          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(t.x, t.y - zPx, tr, 0, Math.PI * 2);
+          ctx.fill();
         }
-        ctx.closePath();
-        ctx.fill();
-      });
+      }
 
-      // Glossy highlight
-      const shineGrad = ctx.createRadialGradient(bx - r * 0.25, by - r * 0.3, 0, bx - r * 0.25, by - r * 0.3, r * 0.6);
-      shineGrad.addColorStop(0, 'rgba(255,255,255,0.7)');
-      shineGrad.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = shineGrad;
+      // Ball core with glow
+      ctx.save();
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = '#fff';
       ctx.beginPath();
       ctx.arc(bx, by, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Subtle outline
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 1;
+      // Second glow pass (cyan tint)
+      ctx.shadowColor = '#88ddff';
+      ctx.shadowBlur = 25;
       ctx.beginPath();
-      ctx.arc(bx, by, r, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(bx, by, r * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
     function drawHUD() {
-      const isMatch = gameMode !== 'physics';
-      const fg = '#fff';
-      const fgAlpha = 'rgba(255,255,255,';
-
-      // Charge indicator (lob power) — shows during serve or when Space held in play
-      if (spaceDown && ((ballState === 'on_gk' && serveFromLeft) || ballState === 'live')) {
+      // Charge indicator — shows when Space held
+      if (spaceDown && (ballState === 'live' || ballState === 'held_player')) {
         const maxCharge = 1.5;
         const charge = clamp(spaceHeldTime / maxCharge, 0, 1);
         const barW = 30; const barH = 3;
         const bx = ball.x + ball.size + 4;
         const by = ball.y - 10 - ball.z;
-        ctx.fillStyle = fgAlpha + '0.12)';
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
         ctx.fillRect(bx, by, barW, barH);
+        ctx.save();
+        ctx.shadowColor = charge < 0.6 ? '#0f0' : '#ff0';
+        ctx.shadowBlur = 4;
         const r = Math.round(255 * charge);
         const g = Math.round(255 * (1 - charge * 0.4));
         ctx.fillStyle = `rgb(${r},${g},80)`;
         ctx.fillRect(bx, by, barW * charge, barH);
+        ctx.restore();
       }
     }
 
     function drawScoreboard() {
-      const isMatch = gameMode !== 'physics';
-      // Score positioned top-left area (Atari style)
-      const sx = W * 0.12;
-      const sy = 38;
-      ctx.font = 'bold 13px monospace';
-      ctx.fillStyle = isMatch ? '#8ab4e8' : TEAM_LEFT.primary;  // lighter blue on dark
-      ctx.textAlign = 'right';
-      ctx.fillText(TEAM_LEFT.short, sx - 10, sy);
-      ctx.fillStyle = isMatch ? '#ffe066' : TEAM_RIGHT.primary;  // lighter yellow on dark
-      ctx.textAlign = 'left';
-      ctx.fillText(TEAM_RIGHT.short, sx + 80, sy);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 28px monospace';
+      ctx.save();
+      // Neon LED scoreboard at top center
       ctx.textAlign = 'center';
-      ctx.fillText(`${scoreL} - ${scoreR}`, sx + 35, sy + 4);
+
+      // Team codes in neon team colors
+      ctx.font = 'bold 14px monospace';
+      ctx.shadowBlur = 8;
+
+      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.fillStyle = TEAM_LEFT.primary;
+      ctx.fillText(TEAM_LEFT.short, W / 2 - 55, 30);
+
+      ctx.shadowColor = TEAM_RIGHT.primary;
+      ctx.fillStyle = TEAM_RIGHT.primary;
+      ctx.fillText(TEAM_RIGHT.short, W / 2 + 55, 30);
+
+      // Score — large glowing white
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 32px monospace';
+      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, 35);
+
+      ctx.restore();
     }
 
     function drawPlayerLabel() {
@@ -1573,30 +1156,21 @@
     }
 
     function render() {
-      // Fly-in animation tick
-      if (flyInProgress < 1) {
-        const elapsed = (performance.now() - flyInStartTime) / 1000;
-        const duration = 1.5;
-        flyInProgress = Math.min(1, elapsed / duration);
-        // Ease out cubic
-        flyInProgress = 1 - Math.pow(1 - flyInProgress, 3);
-      }
-
       drawField();
-      if (flyInProgress >= 1) {
-        allPaddles.forEach(drawPaddle);
-        drawBall();
-        drawHUD();
-      }
+      allPaddles.forEach(drawPaddle);
+      drawBall();
+      drawHUD();
       drawScoreboard();
-      drawPlayerLabel();
 
       if (gameMode === 'physics') {
         drawPhysicsHUD();
-      } else {
-        drawLogo();
-        drawGlassOverlay();
       }
+
+      // ESC hint
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('ESC = menu', W / 2, H - 8);
     }
 
     // ─── WORLD CUP SCREEN ───
