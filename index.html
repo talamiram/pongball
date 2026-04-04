@@ -39,7 +39,7 @@
     //  GAME MODE: 'menu' | 'match' | 'physics'
     // ═══════════════════════════════════════════
     let gameMode = 'menu';
-    let menuSelection = 0;  // 0 = match, 1 = physics, 2 = worldcup
+    let menuSelection = 0;  // 0 = match, 1 = match3d, 2 = physics, 3 = worldcup
 
     // ─── TEAMS: ITALIA 90 ───
     // Player = Italy (left), AI = Brazil (right)
@@ -164,17 +164,18 @@
       // Menu input
       if (gameMode === 'menu') {
         if (e.code === 'ArrowUp') {
-          menuSelection = (menuSelection + 2) % 3;
+          menuSelection = (menuSelection + 3) % 4;
         }
         if (e.code === 'ArrowDown') {
-          menuSelection = (menuSelection + 1) % 3;
+          menuSelection = (menuSelection + 1) % 4;
         }
         if (e.code === 'Enter' || e.code === 'Space') {
-          startGame(['match', 'physics', 'worldcup'][menuSelection]);
+          startGame(['match', 'match3d', 'physics', 'worldcup'][menuSelection]);
         }
         if (e.code === 'Digit1') startGame('match');
-        if (e.code === 'Digit2') startGame('physics');
-        if (e.code === 'Digit3') startGame('worldcup');
+        if (e.code === 'Digit2') startGame('match3d');
+        if (e.code === 'Digit3') startGame('physics');
+        if (e.code === 'Digit4') startGame('worldcup');
       }
       // Skip cutscene
       if (cutsceneActive && (e.code === 'Space' || e.code === 'Enter')) {
@@ -294,7 +295,7 @@
       goalPause = 0;  // no pause at kickoff (resetAfterGoal sets 0.8s pause for goals)
       lastTime = performance.now();
 
-      if (mode === 'match') {
+      if (mode === 'match' || mode === 'match3d') {
         cutsceneActive = true;
         cutsceneStartTime = performance.now() / 1000;
       } else {
@@ -1021,7 +1022,7 @@
       ctx.fillText('PONGBALL', cx, cy - 60);
 
       // Menu items
-      const items = ['MATCH', 'PHYSICS LAB', 'WORLD CUP'];
+      const items = ['MATCH', 'MATCH 3D', 'PHYSICS LAB', 'WORLD CUP'];
 
       items.forEach((label, i) => {
         const iy = cy + 20 + i * 50;
@@ -1164,6 +1165,412 @@
       ctx.restore();
     }
 
+    // ═══════════════════════════════
+    //  3D PERSPECTIVE RENDER
+    // ═══════════════════════════════
+
+    // Project a point from game-space (0..W, 0..H) onto the 3D trapezoid
+    // The table is viewed from the front-right at ~30° down
+    function project3D(gx, gy, gz) {
+      // Normalize to 0..1
+      const u = gx / W;
+      const v = gy / H;
+
+      // Table quad corners in screen space (trapezoid — far edge narrower)
+      // Viewed from front-right, the left side is further away
+      const margin = 0.04;
+      const tableW = 1 - margin * 2;
+
+      // Perspective squeeze: far edge (top) is narrower
+      const squeeze = 0.18;  // how much the far edge narrows
+      const tiltY = 0.12;    // vertical offset — far edge is higher
+
+      // Far edge (top of field, v=0)
+      const farL  = margin + squeeze;
+      const farR  = 1 - margin - squeeze;
+      const farY  = 0.10 + tiltY;
+
+      // Near edge (bottom of field, v=1)
+      const nearL = margin;
+      const nearR = 1 - margin;
+      const nearY = 0.88;
+
+      // Bilinear interpolation across the quad
+      const left  = farL  + (nearL - farL)  * v;
+      const right = farR  + (nearR - farR)  * v;
+      const yPos  = farY  + (nearY - farY)  * v;
+
+      const sx = (left + (right - left) * u) * W;
+      const sy = yPos * H;
+
+      // Scale factor (objects at far edge are smaller)
+      const scale = 0.55 + 0.45 * v;  // 0.55 at far, 1.0 at near
+
+      // Z-axis (height above table — lobs)
+      const zOffset = gz * scale * 0.8;
+
+      return { x: sx, y: sy - zOffset, scale };
+    }
+
+    function render3D() {
+      // ─── Background: dark room ───
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, W, H);
+
+      // ─── Draw table body (black box below the playing surface) ───
+      const bodyTop = H * 0.88;
+      const bodyH = H * 0.14;
+
+      // Table front face
+      const tblL = W * 0.04;
+      const tblR = W * 0.96;
+      ctx.fillStyle = '#111';
+      ctx.fillRect(tblL, bodyTop, tblR - tblL, bodyH);
+
+      // Table leg cutout (arch in center)
+      const legW = W * 0.30;
+      const legH = bodyH * 0.65;
+      const legX = (W - legW) / 2;
+      ctx.fillStyle = '#0a0a0a';
+      ctx.beginPath();
+      ctx.moveTo(legX, bodyTop + bodyH);
+      ctx.lineTo(legX, bodyTop + bodyH - legH);
+      ctx.quadraticCurveTo(W / 2, bodyTop + bodyH - legH - 10, legX + legW, bodyTop + bodyH - legH);
+      ctx.lineTo(legX + legW, bodyTop + bodyH);
+      ctx.closePath();
+      ctx.fill();
+
+      // ─── PONGBALL branding on table front ───
+      ctx.save();
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.max(20, W * 0.028)}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('PONGBALL', W * 0.28, bodyTop + bodyH * 0.35);
+      ctx.fillText('PONGBALL', W * 0.72, bodyTop + bodyH * 0.35);
+
+      // Italia '90 with flag stripe
+      ctx.font = `bold ${Math.max(10, W * 0.012)}px monospace`;
+      ctx.fillStyle = '#ccc';
+      ctx.fillText("ITALIA '90", W * 0.28, bodyTop + bodyH * 0.60);
+      ctx.fillText("ITALIA '90", W * 0.72, bodyTop + bodyH * 0.60);
+
+      // Italian flag stripes
+      const flagW = W * 0.04;
+      const flagH = 3;
+      [W * 0.28, W * 0.72].forEach(cx => {
+        const fx = cx - flagW / 2;
+        const fy = bodyTop + bodyH * 0.72;
+        ctx.fillStyle = '#009246'; ctx.fillRect(fx, fy, flagW / 3, flagH);
+        ctx.fillStyle = '#fff';    ctx.fillRect(fx + flagW / 3, fy, flagW / 3, flagH);
+        ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx + flagW * 2 / 3, fy, flagW / 3, flagH);
+      });
+      ctx.restore();
+
+      // ─── Art deco stripes on table sides ───
+      ctx.save();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      // Left side stripe
+      ctx.beginPath();
+      ctx.moveTo(tblL + 8, bodyTop + 4);
+      ctx.lineTo(tblL + 8, bodyTop + bodyH - 4);
+      ctx.lineTo(tblL + 30, bodyTop + bodyH - 4);
+      ctx.stroke();
+      // Right side stripe
+      ctx.beginPath();
+      ctx.moveTo(tblR - 8, bodyTop + 4);
+      ctx.lineTo(tblR - 8, bodyTop + bodyH - 4);
+      ctx.lineTo(tblR - 30, bodyTop + bodyH - 4);
+      ctx.stroke();
+      ctx.restore();
+
+      // ─── Draw the playing surface (perspective quad) ───
+      // Surface is a filled trapezoid
+      const tl = project3D(0, 0, 0);
+      const tr = project3D(W, 0, 0);
+      const bl = project3D(0, H, 0);
+      const br = project3D(W, H, 0);
+
+      ctx.save();
+      ctx.fillStyle = '#0c0c0c';
+      ctx.beginPath();
+      ctx.moveTo(tl.x, tl.y);
+      ctx.lineTo(tr.x, tr.y);
+      ctx.lineTo(br.x, br.y);
+      ctx.lineTo(bl.x, bl.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // ─── LED border strips (the signature neon glow) ───
+      ctx.lineWidth = 4;
+
+      // Left half border — team left color
+      ctx.save();
+      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.shadowBlur = 20;
+      ctx.strokeStyle = TEAM_LEFT.primary;
+      ctx.beginPath();
+      const ml = project3D(0, H / 2, 0);
+      const mt = project3D(W / 2, 0, 0);
+      ctx.moveTo(ml.x, ml.y);
+      ctx.lineTo(tl.x, tl.y);
+      ctx.lineTo(mt.x, mt.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ml.x, ml.y);
+      ctx.lineTo(bl.x, bl.y);
+      const mb = project3D(W / 2, H, 0);
+      ctx.lineTo(mb.x, mb.y);
+      ctx.stroke();
+      ctx.restore();
+
+      // Right half border — team right color
+      ctx.save();
+      ctx.shadowColor = TEAM_RIGHT.primary;
+      ctx.shadowBlur = 20;
+      ctx.strokeStyle = TEAM_RIGHT.primary;
+      ctx.beginPath();
+      const mr = project3D(W, H / 2, 0);
+      ctx.moveTo(mr.x, mr.y);
+      ctx.lineTo(tr.x, tr.y);
+      ctx.lineTo(mt.x, mt.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mr.x, mr.y);
+      ctx.lineTo(br.x, br.y);
+      ctx.lineTo(mb.x, mb.y);
+      ctx.stroke();
+      ctx.restore();
+
+      // ─── Field lines (projected) ───
+      ctx.save();
+      ctx.shadowColor = 'rgba(100,200,255,0.6)';
+      ctx.shadowBlur = 6;
+      ctx.strokeStyle = 'rgba(100,200,255,0.30)';
+      ctx.lineWidth = 1.2;
+
+      // Center line (dashed)
+      ctx.setLineDash([6, 6]);
+      const ct = project3D(W / 2, 0, 0);
+      const cb = project3D(W / 2, H, 0);
+      ctx.beginPath(); ctx.moveTo(ct.x, ct.y); ctx.lineTo(cb.x, cb.y); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Center circle (approximate with projected points)
+      const ccR = H * 0.12;
+      const ccSteps = 32;
+      ctx.beginPath();
+      for (let i = 0; i <= ccSteps; i++) {
+        const a = (i / ccSteps) * Math.PI * 2;
+        const px = W / 2 + Math.cos(a) * ccR * (W / H);
+        const py = H / 2 + Math.sin(a) * ccR;
+        const p = project3D(px, py, 0);
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+
+      // Center spot
+      const cs = project3D(W / 2, H / 2, 0);
+      ctx.fillStyle = 'rgba(100,200,255,0.5)';
+      ctx.beginPath(); ctx.arc(cs.x, cs.y, 2 * cs.scale, 0, Math.PI * 2); ctx.fill();
+
+      // Penalty areas
+      const penW = W * 0.14;
+      const penH = H * 0.56;
+      const penTop = (H - penH) / 2;
+      const glL = W * GOAL_LINE_RATIO;
+      const glR = W * (1 - GOAL_LINE_RATIO);
+
+      // Left penalty area
+      drawProjectedRect(glL, penTop, penW, penH);
+      // Right penalty area
+      drawProjectedRect(glR - penW, penTop, penW, penH);
+
+      // Goal areas
+      const gaW = penW * 0.42;
+      const gaH = H * 0.32;
+      const gaTop = (H - gaH) / 2;
+      drawProjectedRect(glL, gaTop, gaW, gaH);
+      drawProjectedRect(glR - gaW, gaTop, gaW, gaH);
+
+      // Goal mouths (bright white)
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2.5;
+
+      const gt = goalTop(), gb = goalBottom();
+      let p1 = project3D(glL, gt, 0);
+      let p2 = project3D(glL, gb, 0);
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+
+      p1 = project3D(glR, gt, 0);
+      p2 = project3D(glR, gb, 0);
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+
+      ctx.restore();
+
+      // ─── Paddles (projected) ───
+      allPaddles.forEach(p => {
+        const team = p.isLeft ? leftTeam : rightTeam;
+        const identity = team ? getZoneIdentity(p, team.data) : { zone: 'fwd', player: { num: '?', name: '???' } };
+        const isKeeper = identity.zone === 'box';
+        const teamColor = team ? team.data.primary : '#fff';
+        const neonColor = isKeeper ? '#00ff88' : teamColor;
+
+        // Project paddle center — paddles are larger in 3D mode for visibility
+        const pcx = p.x + p.w / 2;
+        const pcy = p.y + p.h / 2;
+        const pp = project3D(pcx, pcy, 0);
+        const pw = p.w * pp.scale * 2.2;   // thicker
+        const ph = p.h * pp.scale * 1.6;   // taller
+
+        ctx.save();
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = p.isPlayer ? 18 : 10;
+        ctx.fillStyle = neonColor;
+        ctx.fillRect(pp.x - pw / 2, pp.y - ph / 2, pw, ph);
+        // Bright core
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(pp.x - pw / 2 + 1, pp.y - ph / 2 + 1, pw - 2, ph - 2);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+
+        // Label
+        ctx.save();
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = neonColor;
+        ctx.font = `bold ${Math.max(7, 8 * pp.scale)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`#${identity.player.num}`, pp.x, pp.y - ph / 2 - 4 * pp.scale);
+        ctx.restore();
+      });
+
+      // ─── Ball (projected) ───
+      if (goalPause <= 0 && ball) {
+        const bp = project3D(ball.x, ball.y, ball.z);
+        const r = (ball.size / 2) * bp.scale * 1.4 * (1 + ball.z / 300);
+
+        // Ground shadow when airborne
+        if (ball.z > 2) {
+          const gp = project3D(ball.x, ball.y, 0);
+          const shadowAlpha = Math.max(0.05, 0.15 - ball.z / 500);
+          ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
+          ctx.beginPath();
+          ctx.ellipse(gp.x, gp.y, r * 1.8, r * 0.5 * bp.scale, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Ball trail
+        for (let i = 0; i < ballTrail.length; i++) {
+          const t = ballTrail[i];
+          const tp = project3D(t.x, t.y, ball.z * (i / ballTrail.length));
+          const alpha = (i / ballTrail.length) * 0.25;
+          const tr = r * (0.3 + (i / ballTrail.length) * 0.5);
+          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(tp.x, tp.y, tr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Ball core with glow
+        ctx.save();
+        ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 12 * bp.scale;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(bp.x, bp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowColor = '#88ddff';
+        ctx.shadowBlur = 20 * bp.scale;
+        ctx.beginPath();
+        ctx.arc(bp.x, bp.y, r * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // ─── Glass top edge (subtle reflection) ───
+      ctx.save();
+      ctx.globalAlpha = 0.06;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tl.x - 3, tl.y - 3);
+      ctx.lineTo(tr.x + 3, tr.y - 3);
+      ctx.lineTo(br.x + 3, br.y + 3);
+      ctx.lineTo(bl.x - 3, bl.y + 3);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+
+      // ─── Scoreboard (above table, LED style) ───
+      ctx.save();
+      const scoreY = tl.y - 20;
+      ctx.textAlign = 'center';
+
+      ctx.font = 'bold 12px monospace';
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.fillStyle = TEAM_LEFT.primary;
+      ctx.fillText(TEAM_LEFT.short, W / 2 - 50, scoreY);
+
+      ctx.shadowColor = TEAM_RIGHT.primary;
+      ctx.fillStyle = TEAM_RIGHT.primary;
+      ctx.fillText(TEAM_RIGHT.short, W / 2 + 50, scoreY);
+
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 26px monospace';
+      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, scoreY + 2);
+      ctx.restore();
+
+      // ─── HUD (charge bar, projected near ball) ───
+      if (spaceDown && (ballState === 'live' || ballState === 'held_player') && ball) {
+        const hp = project3D(ball.x + ball.size + 4, ball.y - 10 - ball.z, 0);
+        const maxCharge = 1.5;
+        const charge = clamp(spaceHeldTime / maxCharge, 0, 1);
+        const barW = 25 * hp.scale;
+        const barH = 2 * hp.scale;
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillRect(hp.x, hp.y, barW, barH);
+        ctx.save();
+        ctx.shadowColor = charge < 0.6 ? '#0f0' : '#ff0';
+        ctx.shadowBlur = 3;
+        const cr = Math.round(255 * charge);
+        const cg = Math.round(255 * (1 - charge * 0.4));
+        ctx.fillStyle = `rgb(${cr},${cg},80)`;
+        ctx.fillRect(hp.x, hp.y, barW * charge, barH);
+        ctx.restore();
+      }
+
+      // ESC hint
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('ESC = menu', W / 2, H - 8);
+    }
+
+    // Helper: draw a projected rectangle outline
+    function drawProjectedRect(x, y, w, h) {
+      const p1 = project3D(x, y, 0);
+      const p2 = project3D(x + w, y, 0);
+      const p3 = project3D(x + w, y + h, 0);
+      const p4 = project3D(x, y + h, 0);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.lineTo(p3.x, p3.y);
+      ctx.lineTo(p4.x, p4.y);
+      ctx.closePath();
+      ctx.stroke();
+    }
+
     // ─── MAIN LOOP ───
     function loop(now) {
       if (gameMode === 'menu') {
@@ -1172,6 +1579,9 @@
         renderWorldCup();
       } else if (cutsceneActive) {
         renderCutscene(now);
+      } else if (gameMode === 'match3d') {
+        update(now);
+        render3D();
       } else {
         update(now);
         render();
