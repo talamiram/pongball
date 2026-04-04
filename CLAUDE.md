@@ -21,9 +21,12 @@
 
 Pong, but football. Two teams of 11 players each in a **4-4-2 formation grid**. Each player is a small vertical paddle. The ball bounces off every paddle as it weaves through the formation. One player is human-controlled (Maradona); the rest are AI.
 
-The key mechanic is **catch and release**: certain paddles can trap the ball. The player then aims with movement and releases with Space. Hold Space longer to lob the ball higher (it flies over defenders in the air).
+There are **two core shot mechanics**:
 
-**Goal posts** define a goal mouth (30% of screen height, centered). Ball must enter the goal mouth to score. Shots that miss hit the post or wall and bounce back.
+1. **Catch and release**: Let the ball hit your paddle (no Space) → it's trapped. Aim with arrows, release with Space. Hold Space longer to lob higher.
+2. **Volley / first-time shot**: Hold Space AS the ball arrives → immediate hard shot, no catch. Aim with arrows at the moment of contact. Hold duration before contact controls lob height.
+
+**Goal posts** define a goal mouth (30% of screen height, centered). Ball must enter the goal mouth to score — including lobbed balls that fly in. Shots that miss hit the post or wall and bounce back.
 
 ---
 
@@ -31,10 +34,11 @@ The key mechanic is **catch and release**: certain paddles can trap the ball. Th
 
 | Input | Action |
 |---|---|
-| Arrow keys (up/down) | Move controlled paddle vertically |
+| Arrow keys (up/down) | Move controlled paddle vertically + aim volleys |
 | Arrow keys (left/right) | Move controlled paddle horizontally (outfield only) |
 | Space (tap + release) | Flat shot / flat pass along the ground |
 | Space (hold + release) | Lob — longer hold = higher ball. Speed stays constant. |
+| Space held on contact | **Volley** — first-time shot, directed by arrows, no catch |
 
 **Control switching:** When ball is on your GK (serve state), arrow keys move the GK up/down to aim the serve. The instant Space is released (serve happens), control switches back to your forward (Maradona).
 
@@ -61,7 +65,8 @@ This creates real tactical depth: flat shots are fast but must thread through th
 
 ```
 on_gk → (Space release) → live
-live → (hits player's mainFwd) → held_player
+live → (hits player's mainFwd, Space NOT held) → held_player
+live → (hits player's mainFwd, Space IS held) → live (VOLLEY — immediate shot)
 live → (hits AI's mainFwd) → held_ai
 held_player → (Space release or 2s auto) → live
 held_ai → (AI timer or 2s auto) → live
