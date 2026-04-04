@@ -117,23 +117,30 @@ States:
 
 ---
 
-## The Formation Grid
+## The Formation Grid (Identity System)
 
-Each team's 10 outfield players are arranged in columns at fixed x-positions. Players move **vertically within their zone** like classic Pong paddles. This IS the grid mechanic — formation columns that the ball must weave through.
+**There are NOT 11 paddles per side.** Each team has exactly **2 paddles**: one GK and one outfield player. The formation grid is a **naming system** — the outfield paddle's identity changes based on where it is on the field when it receives or shoots the ball.
 
-**X-positions (ratio of screen width):**
+This is how it works: the 4-4-2 formation defines **zones** on the field. When the paddle catches, volleys, or shoots from a zone, it "becomes" the player assigned to that zone. The paddle's displayed name and number update accordingly.
+
+**Zone x-ranges (ratio of screen width, left team):**
 ```
-Left (Argentina):  GK 0.025  |  DEF 0.14  |  MID 0.30  |  FWD 0.43
-Right (Italy):     FWD 0.57  |  MID 0.70  |  DEF 0.86  |  GK 0.975
+DEF zone:  0.05 – 0.22   →  Giusti / Serrizuela / Ruggeri / Olarticoechea
+MID zone:  0.22 – 0.38   →  Simón / Basualdo / Burruchaga / Calderón
+FWD zone:  0.38 – 0.50   →  Maradona / Caniggia
 ```
 
-**Y-positions (ratio of screen height):**
-- 4-player lines (DEF, MID): spread at 0.15, 0.38, 0.62, 0.85
-- 2-player lines (FWD): spread at 0.37, 0.63
+**Within each zone, y-position picks the specific player.** The 4-player lines (DEF, MID) are split into vertical bands at 0.15, 0.38, 0.62, 0.85. The 2-player lines (FWD) split at 0.37, 0.63.
 
-Each paddle has a `homeX` and `homeY` it returns to when the ball is far away. AI movement is zone-based — players track the ball y-position with lag proportional to distance, and stay within ±3× their zone margin from home.
+**Example:** Your paddle is at x=0.15, y=0.70 when it catches the ball → that's the DEF zone, lower half → you're "Olarticoechea #16". You run forward to x=0.40 and shoot → now you're "Maradona #10" (FWD zone, center).
 
-Forwards and midfielders have slight x-movement (push up when attacking, fall back when defending) but are clamped to their half.
+**The AI outfield paddle works the same way** for the opposing team. Schillaci, Baggio, Baresi etc. are all the same paddle — its name changes with position.
+
+**Why this matters:**
+- Commentary: "Goal scored by Maradona!" vs "Goal scored by Burruchaga!" based on where the shot came from
+- Stats tracking: goals per player, even though it's one paddle
+- Feels like a full team without the chaos of 22 paddles
+- The GK is always the GK (Goycochea / Zenga) — that identity is fixed
 
 ---
 

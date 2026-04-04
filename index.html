@@ -42,47 +42,48 @@
     let menuSelection = 0;  // 0 = match, 1 = physics
 
     // ─── TEAMS: ITALIA 90 SEMIFINAL ───
+    // Stats: speed (movement multiplier), reaction (ball tracking), size (paddle height multiplier)
     const TEAM_LEFT = {
       name: 'Argentina', short: 'ARG',
       primary: '#75AADB', secondary: '#fff',
-      gk:  { num: 12, name: 'Goycochea' },
+      gk:  { num: 12, name: 'Goycochea', stats: { speed: 0.7, reaction: 0.75, size: 1.0 } },
       def: [
-        { num: 14, name: 'Giusti' },
-        { num: 18, name: 'Serrizuela' },
-        { num: 19, name: 'Ruggeri' },
-        { num: 16, name: 'Olarticoechea' }
+        { num: 14, name: 'Giusti',          stats: { speed: 0.65, reaction: 0.70, size: 1.0 } },
+        { num: 18, name: 'Serrizuela',      stats: { speed: 0.60, reaction: 0.65, size: 1.05 } },
+        { num: 19, name: 'Ruggeri',         stats: { speed: 0.60, reaction: 0.75, size: 1.1 } },
+        { num: 16, name: 'Olarticoechea',   stats: { speed: 0.70, reaction: 0.70, size: 0.95 } }
       ],
       mid: [
-        { num: 20, name: 'Simón' },
-        { num: 4,  name: 'Basualdo' },
-        { num: 7,  name: 'Burruchaga' },
-        { num: 6,  name: 'Calderón' }
+        { num: 20, name: 'Simón',           stats: { speed: 0.65, reaction: 0.65, size: 1.0 } },
+        { num: 4,  name: 'Basualdo',        stats: { speed: 0.70, reaction: 0.70, size: 1.0 } },
+        { num: 7,  name: 'Burruchaga',      stats: { speed: 0.80, reaction: 0.80, size: 0.95 } },
+        { num: 6,  name: 'Calderón',        stats: { speed: 0.65, reaction: 0.65, size: 1.0 } }
       ],
       fwd: [
-        { num: 10, name: 'Maradona', captain: true },
-        { num: 8,  name: 'Caniggia' }
+        { num: 10, name: 'Maradona', captain: true, stats: { speed: 0.95, reaction: 0.95, size: 1.1 } },
+        { num: 8,  name: 'Caniggia',        stats: { speed: 1.0, reaction: 0.80, size: 0.9 } }
       ]
     };
 
     const TEAM_RIGHT = {
       name: 'Italy', short: 'ITA',
       primary: '#003DA5', secondary: '#fff',
-      gk:  { num: 1,  name: 'Zenga' },
+      gk:  { num: 1,  name: 'Zenga',        stats: { speed: 0.7, reaction: 0.70, size: 1.0 } },
       def: [
-        { num: 2,  name: 'Bergomi' },
-        { num: 6,  name: 'Baresi', captain: true },
-        { num: 5,  name: 'Ferri' },
-        { num: 3,  name: 'Maldini' }
+        { num: 2,  name: 'Bergomi',         stats: { speed: 0.65, reaction: 0.75, size: 1.05 } },
+        { num: 6,  name: 'Baresi', captain: true, stats: { speed: 0.60, reaction: 0.95, size: 1.2 } },
+        { num: 5,  name: 'Ferri',           stats: { speed: 0.70, reaction: 0.70, size: 1.0 } },
+        { num: 3,  name: 'Maldini',         stats: { speed: 0.90, reaction: 0.85, size: 1.0 } }
       ],
       mid: [
-        { num: 7,  name: 'Donadoni' },
-        { num: 8,  name: 'De Napoli' },
-        { num: 16, name: 'Berti' },
-        { num: 11, name: 'Giannini' }
+        { num: 7,  name: 'Donadoni',        stats: { speed: 0.75, reaction: 0.75, size: 0.95 } },
+        { num: 8,  name: 'De Napoli',       stats: { speed: 0.70, reaction: 0.70, size: 1.0 } },
+        { num: 16, name: 'Berti',           stats: { speed: 0.75, reaction: 0.70, size: 1.0 } },
+        { num: 11, name: 'Giannini',        stats: { speed: 0.80, reaction: 0.80, size: 0.95 } }
       ],
       fwd: [
-        { num: 19, name: 'Schillaci' },
-        { num: 15, name: 'Baggio' }
+        { num: 19, name: 'Schillaci',       stats: { speed: 0.85, reaction: 0.85, size: 1.0 } },
+        { num: 15, name: 'Baggio',          stats: { speed: 0.90, reaction: 0.90, size: 1.0 } }
       ]
     };
 
@@ -187,12 +188,14 @@
 
     // ─── BUILD TEAM ───
     function makePaddle(info, role, isLeft, homeXRatio, homeYRatio, teamData) {
+      const stats = info.stats || { speed: 0.7, reaction: 0.7, size: 1.0 };
       const w = role === 'gk' ? PADDLE_W_GK :
                 (info._isPlayer ? PADDLE_W_PLAYER : PADDLE_W_OF);
-      const hRatio = role === 'gk' ? GK_H_RATIO :
+      const baseHRatio = role === 'gk' ? GK_H_RATIO :
                      role === 'def' ? DEF_H_RATIO :
                      role === 'mid' ? MID_H_RATIO :
                      (info._isPlayer ? PLAYER_H_RATIO : FWD_H_RATIO);
+      const hRatio = baseHRatio * stats.size;
       const h = H * hRatio;
       const homeX = W * homeXRatio - w / 2;
       const homeY = H * homeYRatio - h / 2;
@@ -202,6 +205,7 @@
         role, isLeft, isGK: role === 'gk',
         isPlayer: info._isPlayer || false,
         isMainFwd: info._isMainFwd || false,
+        stats,
         x: homeX, y: homeY, w, h,
         homeX, homeY, homeXRatio, homeYRatio,
         hRatio,
