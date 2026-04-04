@@ -208,6 +208,30 @@ Right team's main forward (Schillaci) has special AI for the catch-and-shoot mec
 
 ---
 
+## Game Modes
+
+The game starts on a **menu screen** (press 1/2 or arrow+Enter to select):
+
+### Match Mode
+Full 4-4-2 formation grid, Argentina vs Italy, 22 players. This is the real game.
+
+### Physics Lab
+Stripped-down testing mode for iterating on core mechanics. **Only 3 paddles**: your GK (Goycochea), your forward (Maradona), and the opposing GK (Zenga). No formation in the way, no AI forward. Just you, the ball, and the goal.
+
+Includes a **debug HUD** (top-left) showing:
+- Ball speed (% of screen width)
+- Ball height (z pixels above ground)
+- Ball vertical velocity (vz)
+- Peak height of current flight
+- Last shot's charge time (ms) and peak height
+- Airborne status
+
+Use Physics Lab to tune: lob arc feel, charge sensitivity, gravity, goal post collisions, GK behavior, ball speed. ESC returns to menu.
+
+**When working on feel/mechanics, always test in Physics Lab first** — it isolates the core loop without formation noise.
+
+---
+
 ## Known Issues & Debt
 
 1. Old `src/` folder, `style.css`, and `setup.sh` still exist in the repo — unused, can be deleted
@@ -244,3 +268,31 @@ Right team's main forward (Schillaci) has special AI for the catch-and-shoot mec
 - Difficulty levels (AI skill sliders)
 - Mobile touch controls
 - Replays / goal celebration animation
+
+---
+
+## Current Priority: Make It Fun
+
+The formation grid and team system are in place. The next focus is **making each player feel distinct** and the game feel fun to play. Specifically:
+
+1. **Player attributes.** Speed, reaction time, and paddle size should vary by player quality. Maradona and Baggio should feel special. Baresi should be a wall. Maldini fast. Caniggia the quickest on the pitch. Right now everyone is basically identical with different labels.
+
+2. **Formation behavior.** Defenders should shift as a back line. Midfield should compress/expand with ball position. Forwards should make runs into space, not just track ball.y. The formation should feel alive, not static.
+
+3. **AI shooting.** Schillaci (AI main forward) should time runs, position for through-balls, and vary between flat shots and lobs. He's too predictable.
+
+4. **Use Physics Lab** to test any mechanic changes before touching Match mode.
+
+5. **Push after each meaningful change** so the game can be tested live at pongball.io.
+
+---
+
+## Working With This Codebase
+
+- **Everything is in `index.html`.** One file. Edit it, push, it's live.
+- **Test at pongball.io** — Cloudflare Pages deploys on push to main.
+- **Constants are at the top** — easy to tune without reading the whole file.
+- **The `gameMode` variable** controls menu/match/physics flow. The main loop checks it.
+- **ESC** always returns to menu from any mode.
+- **Ratio-based sizing** — never use absolute pixel values for game objects. Always `W * ratio` or `H * ratio`.
+- **Don't add dependencies.** No npm, no build step, no external JS. Keep it inline.
