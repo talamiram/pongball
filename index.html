@@ -184,10 +184,8 @@
 
     // ─── BUILD TEAM ───
     function makePaddle(info, role, isLeft, homeXRatio, homeYRatio, teamData) {
-      const stats = info.stats || { speed: 0.7, reaction: 0.7, size: 1.0 };
       const w = role === 'gk' ? PADDLE_W_GK : PADDLE_W_OF;
-      const baseHRatio = role === 'gk' ? GK_H_RATIO : OUTFIELD_H_RATIO;
-      const hRatio = baseHRatio * stats.size;
+      const hRatio = role === 'gk' ? GK_H_RATIO : OUTFIELD_H_RATIO;
       const h = H * hRatio;
       const homeX = W * homeXRatio - w / 2;
       const homeY = H * homeYRatio - h / 2;
@@ -197,7 +195,6 @@
         role, isLeft, isGK: role === 'gk',
         isPlayer: info._isPlayer || false,
         isMainFwd: info._isMainFwd || false,
-        stats,
         x: homeX, y: homeY, w, h,
         homeX, homeY, homeXRatio, homeYRatio,
         hRatio,
@@ -206,46 +203,53 @@
       };
     }
 
+    // ─── ZONE IDENTITY: resolve which player the paddle "is" based on position ───
+    function getZoneIdentity(paddle, teamData) {
+      const xRatio = (paddle.x + paddle.w / 2) / W;
+      const yRatio = (paddle.y + paddle.h / 2) / H;
+      const isLeft = paddle.isLeft;
+
+      // X zones (left team; right team is mirrored)
+      const x = isLeft ? xRatio : (1 - xRatio);
+      let zone, zoneList;
+      if (x < 0.22) {
+        zone = 'def'; zoneList = teamData.def;
+      } else if (x < 0.38) {
+        zone = 'mid'; zoneList = teamData.mid;
+      } else {
+        zone = 'fwd'; zoneList = teamData.fwd;
+      }
+
+      // Y position picks specific player within the zone
+      let idx = 0;
+      if (zoneList.length === 4) {
+        const bands = [0.265, 0.50, 0.735];
+        if (yRatio < bands[0]) idx = 0;
+        else if (yRatio < bands[1]) idx = 1;
+        else if (yRatio < bands[2]) idx = 2;
+        else idx = 3;
+      } else if (zoneList.length === 2) {
+        idx = yRatio < 0.5 ? 0 : 1;
+      }
+
+      const player = zoneList[idx];
+      return { zone, player, stats: player.stats };
+    }
+
     function buildTeam(td, isLeft, physicsMode) {
       const side = isLeft ? 'L' : 'R';
       const gk = makePaddle(td.gk, 'gk', isLeft, FORM_X['gk' + side], 0.5, td);
-
-      const defYs = [0.15, 0.38, 0.62, 0.85];
-      const midYs = [0.15, 0.38, 0.62, 0.85];
-      const fwdYs = [0.37, 0.63];
-
       const players = [];
 
-      // In physics mode: skip formation for right team entirely, left team only gets the forward
+      // Physics mode right team: GK only
       if (physicsMode && !isLeft) {
         return { gk, players: [], mainFwd: null, data: td, isLeft };
       }
 
-      if (!physicsMode) {
-        td.def.forEach((p, i) => {
-          players.push(makePaddle(p, 'def', isLeft, FORM_X['def' + side], defYs[i], td));
-        });
-        td.mid.forEach((p, i) => {
-          players.push(makePaddle(p, 'mid', isLeft, FORM_X['mid' + side], midYs[i], td));
-        });
-      }
-
-      const fwdData = td.fwd.map((p, i) => {
-        const info = { ...p };
-        if (i === 0) {
-          info._isMainFwd = true;
-          if (isLeft) info._isPlayer = true;
-        }
-        return info;
-      });
-
-      if (physicsMode && isLeft) {
-        players.push(makePaddle(fwdData[0], 'fwd', isLeft, FORM_X['fwd' + side], 0.5, td));
-      } else {
-        fwdData.forEach((p, i) => {
-          players.push(makePaddle(p, 'fwd', isLeft, FORM_X['fwd' + side], fwdYs[i], td));
-        });
-      }
+      // Both modes: one main forward per team
+      const mainInfo = { ...td.fwd[0], _isMainFwd: true };
+      if (isLeft) mainInfo._isPlayer = true;
+      players.push(makePaddle(mainInfo, 'fwd', isLeft, FORM_X['fwd' + side], 0.5, td));
 
       const mainFwd = players.find(p => p.isMainFwd);
       return { gk, players, mainFwd, data: td, isLeft };
@@ -430,121 +434,57 @@
       gk.y = clamp(gk.y + move, 0, H - gk.h);
     }
 
-    // ─── FORMATION AI ───
+    // ─── OUTFIELD AI (right team's single paddle) ───
     let aiShootTimer = 0;
 
-    function formationAI(paddle, dt) {
+    function outfieldAI(paddle, dt) {
       if (paddle.isPlayer) return;
 
-      const stats = paddle.stats || { speed: 0.7, reaction: 0.7, size: 1.0 };
-      const baseSpeedMult = paddle.role === 'fwd' ? 0.7 : 0.55;
-      const speed = H * OF_SPEED_RATIO * baseSpeedMult * (0.6 + stats.speed * 0.8);
+      // Get zone-based stats from current position
+      const identity = getZoneIdentity(paddle, rightTeam.data);
+      const stats = identity.stats;
+      const speed = H * OF_SPEED_RATIO * 0.7 * (0.6 + stats.speed * 0.8);
       const cy = paddle.y + paddle.h / 2;
 
-      // ── Schillaci AI: smarter shooting ──
-      if (paddle.isMainFwd && !paddle.isLeft) {
-        if (ballState === 'held_ai' && holdPaddle === paddle) {
-          // Find gap between left defenders
-          const leftDefs = leftTeam.players.filter(p => p.role === 'def');
-          let bestGap = H / 2;
-          let bestGapSize = 0;
-          if (leftDefs.length > 1) {
-            const sorted = leftDefs.map(d => d.y + d.h / 2).sort((a, b) => a - b);
-            for (let i = 0; i < sorted.length - 1; i++) {
-              const gap = sorted[i + 1] - sorted[i];
-              const gapCenter = (sorted[i] + sorted[i + 1]) / 2;
-              if (gap > bestGapSize) { bestGapSize = gap; bestGap = gapCenter; }
-            }
-            // Also check gap above top defender and below bottom
-            if (sorted[0] > bestGapSize) { bestGapSize = sorted[0]; bestGap = sorted[0] / 2; }
-            if (H - sorted[sorted.length - 1] > bestGapSize) { bestGap = (sorted[sorted.length - 1] + H) / 2; }
-          }
-
-          const targetY = bestGap;
-          const diff = targetY - cy;
-          paddle.y += Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
-          paddle.y = clamp(paddle.y, 0, H - paddle.h);
-          aiShootTimer -= dt;
-          if (aiShootTimer <= 0) {
-            // Smart shot selection: lob if defenders are dense near shot path, flat if clear
-            const defsNearPath = leftDefs.filter(d => Math.abs((d.y + d.h / 2) - cy) < H * 0.12).length;
-            const chargeTime = defsNearPath >= 2 ? 0.3 + Math.random() * 0.3 : Math.random() * 0.15;
-            shootFromPaddle(paddle, false, chargeTime);
-          }
-          return;
+      // When holding ball: aim toward player GK gap and shoot
+      if (ballState === 'held_ai' && holdPaddle === paddle) {
+        // Aim away from player's GK position
+        const playerGK = leftTeam.gk;
+        const gkCy = playerGK.y + playerGK.h / 2;
+        // Shoot toward the opposite side of where GK is
+        const targetY = gkCy < H / 2 ? H * 0.65 : H * 0.35;
+        const diff = targetY - cy;
+        paddle.y += Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
+        paddle.y = clamp(paddle.y, 0, H - paddle.h);
+        aiShootTimer -= dt;
+        if (aiShootTimer <= 0) {
+          // Vary shot: lob if GK is close, flat if GK is far
+          const gkDist = Math.abs(gkCy - cy);
+          const chargeTime = gkDist < H * 0.15 ? 0.25 + Math.random() * 0.25 : Math.random() * 0.12;
+          shootFromPaddle(paddle, false, chargeTime);
         }
+        return;
       }
 
-      // ── Back-line shifting: defenders move as a unit toward ball.y ──
-      let shiftY = 0;
-      if (paddle.role === 'def' && ballState === 'live') {
-        const ballInAttackHalf = paddle.isLeft ? (ball.x > W * 0.35) : (ball.x < W * 0.65);
-        if (ballInAttackHalf) {
-          shiftY = (ball.y - H / 2) * 0.20 * stats.reaction;
-        }
-      }
-
-      // ── Midfield compression: tighten spacing when ball is near ──
-      let compressionFactor = 1.0;
-      if (paddle.role === 'mid' && ballState === 'live') {
-        const ballNearMid = Math.abs(ball.x - (paddle.x + paddle.w / 2)) < W * 0.25;
-        if (ballNearMid) {
-          compressionFactor = 0.7;  // tighter spacing
-        }
-      }
-
-      let targetY = paddle.homeY + paddle.h / 2 + shiftY;
-
-      // Apply midfield compression toward ball.y
-      if (compressionFactor < 1.0 && paddle.role === 'mid') {
-        const homeCenter = paddle.homeY + paddle.h / 2;
-        const pullToward = ball.y;
-        targetY = homeCenter + (pullToward - homeCenter) * (1 - compressionFactor) * 0.4 + shiftY;
-      }
-
-      const ballDist = Math.abs(ball.x - (paddle.x + paddle.w / 2));
+      // Normal movement: track ball with reaction-based lag
       const reactionMult = 0.5 + stats.reaction * 0.5;
-      const activeFactor = clamp(1 - ballDist / (W * 0.4), 0, 1) * reactionMult;
-
-      if (ballState === 'live' && activeFactor > 0.1) {
-        targetY = targetY +
-                  (ball.y - targetY) * activeFactor * 0.6;
+      let targetY = H / 2;
+      if (ballState === 'live') {
+        targetY = ball.y;
       }
 
-      const diff = targetY - cy;
+      const diff = (targetY - cy) * reactionMult;
       paddle.y += Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
+      paddle.y = clamp(paddle.y, 0, H - paddle.h);
 
-      const zoneMargin = H * 0.08;
-      const zoneStretch = paddle.role === 'def' ? 3.5 : 3;
-      paddle.y = clamp(paddle.y,
-        Math.max(0, paddle.homeY - zoneMargin * zoneStretch),
-        Math.min(H - paddle.h, paddle.homeY + zoneMargin * zoneStretch));
-
-      // ── X-movement: forwards/mids push up or fall back ──
-      if (paddle.role === 'fwd' || paddle.role === 'mid') {
-        const ballOnThisSide = paddle.isLeft ? (ball.x < W / 2) : (ball.x > W / 2);
-
-        // Forward runs: non-main forwards push toward goal when teammate has ball
-        let runOffset = 0;
-        if (paddle.role === 'fwd' && !paddle.isMainFwd) {
-          const teammateHolding = (paddle.isLeft && ballState === 'held_player') ||
-                                  (!paddle.isLeft && ballState === 'held_ai');
-          if (teammateHolding) {
-            runOffset = paddle.isLeft ? W * 0.06 : -W * 0.06;
-          }
-        }
-
-        const idealX = ballOnThisSide
-          ? paddle.homeX - (paddle.isLeft ? 20 : -20)
-          : paddle.homeX + (paddle.isLeft ? 30 : -30) + runOffset;
-        const xSpeed = speed * 0.3 * (0.7 + stats.speed * 0.3);
-        paddle.x += Math.sign(idealX - paddle.x) * Math.min(Math.abs(idealX - paddle.x), xSpeed * dt);
-        if (paddle.isLeft) {
-          paddle.x = clamp(paddle.x, leftTeam.gk.x + leftTeam.gk.w + 10, W * 0.48);
-        } else {
-          paddle.x = clamp(paddle.x, W * 0.52, rightTeam.gk.x - paddle.w - 10);
-        }
-      }
+      // X-movement: push forward when ball is on opponent side, retreat when defending
+      const ballOnThisSide = ball.x > W / 2;
+      const idealX = ballOnThisSide
+        ? paddle.homeX - 30
+        : paddle.homeX + 40;
+      const xSpeed = speed * 0.3;
+      paddle.x += Math.sign(idealX - paddle.x) * Math.min(Math.abs(idealX - paddle.x), xSpeed * dt);
+      paddle.x = clamp(paddle.x, W * 0.52, rightTeam.gk.x - paddle.w - 10);
     }
 
     // ─── PADDLE COLLISION ───
@@ -737,7 +677,10 @@
 
       if (!leftTeam || !ball) return;
 
-      const pSpeed = H * OF_SPEED_RATIO;
+      // Player speed varies by zone identity
+      const playerIdentity = leftTeam.mainFwd ? getZoneIdentity(leftTeam.mainFwd, leftTeam.data) : null;
+      const pSpeedMult = playerIdentity ? (0.6 + playerIdentity.stats.speed * 0.8) : 1.0;
+      const pSpeed = H * OF_SPEED_RATIO * pSpeedMult;
       const gkSpeed = H * GK_SPEED_RATIO;
 
       const playerControlsGK = (ballState === 'on_gk' && serveFromLeft && goalPause <= 0);
@@ -767,8 +710,7 @@
 
       if (!playerControlsGK) gkAI(leftTeam, GK_SKILL_LEFT, dt);
       gkAI(rightTeam, GK_SKILL_RIGHT, dt);
-      leftTeam.players.forEach(p => formationAI(p, dt));
-      rightTeam.players.forEach(p => formationAI(p, dt));
+      rightTeam.players.forEach(p => outfieldAI(p, dt));
 
       if (goalPause > 0) { goalPause -= dt; return; }
 
@@ -890,10 +832,19 @@
       ctx.fillRect(p.x, p.y, p.w, p.h);
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
 
+      // GKs show fixed number; outfield paddles show zone-based number
+      let displayNum = p.num;
+      if (!p.isGK && (leftTeam || rightTeam)) {
+        const team = p.isLeft ? leftTeam : rightTeam;
+        if (team) {
+          const identity = getZoneIdentity(p, team.data);
+          displayNum = identity.player.num;
+        }
+      }
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
       ctx.font = '8px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(p.num, p.x + p.w / 2, p.y - 3);
+      ctx.fillText(displayNum, p.x + p.w / 2, p.y - 3);
     }
 
     function drawBall() {
@@ -976,14 +927,19 @@
     }
 
     function drawPlayerLabel() {
-      const mp = leftTeam.mainFwd;
-      if (mp && ballState !== 'on_gk') {
+      // Draw zone-based identity for both outfield paddles
+      [leftTeam, rightTeam].forEach(team => {
+        const mp = team.mainFwd;
+        if (!mp) return;
+        if (mp.isPlayer && ballState === 'on_gk') return;
+        const identity = getZoneIdentity(mp, team.data);
+        const p = identity.player;
         ctx.fillStyle = 'rgba(255,255,255,0.25)';
         ctx.font = '9px monospace';
         ctx.textAlign = 'center';
-        const label = mp.captain ? `${mp.name} (C) #${mp.num}` : `${mp.name} #${mp.num}`;
+        const label = p.captain ? `${p.name} (C) #${p.num}` : `${p.name} #${p.num}`;
         ctx.fillText(label, mp.x + mp.w / 2, mp.y + mp.h + 12);
-      }
+      });
     }
 
     // ─── PHYSICS MODE DEBUG HUD ───
