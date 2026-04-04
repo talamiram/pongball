@@ -325,37 +325,39 @@
     }
 
     // ─── SERVE FROM GK ───
+    // Shot power curve: medium charge = "shot" (speed boost + lob), long charge = pure high lob
+    // Sweet spot ~0.15-0.4s for aimed shots (top corners), >0.5s = lob over everyone
+    function shotSpeedMult(charge) {
+      if (charge < 0.05) return 1.0;       // tap = flat pass, normal speed
+      if (charge < 0.15) return 1.1 + (charge - 0.05) * 4;  // ramp up
+      if (charge < 0.40) return 1.5;       // SWEET SPOT — "shot" power
+      return 1.5 - (charge - 0.40) * 1.5;  // taper off — pure lob, less forward speed
+    }
+
     function serveFromGK(chargeTime) {
       const team = serveFromLeft ? leftTeam : rightTeam;
       const gk = team.gk;
       const dir = serveFromLeft ? 1 : -1;
       const charge = chargeTime || 0;
 
-      const speed = W * BALL_SPEED;
+      const speedMult = shotSpeedMult(charge);
+      const speed = W * BALL_SPEED * speedMult;
 
       // Arrow keys aim the serve (read at release)
       let aimY = 0;
-      if (serveFromLeft) {  // player serve
-        if (keys['ArrowUp'])   aimY = -0.6;
-        if (keys['ArrowDown']) aimY =  0.6;
+      if (serveFromLeft) {
+        if (keys['ArrowUp'])   aimY = -0.7;
+        if (keys['ArrowDown']) aimY =  0.7;
       } else {
-        aimY = (Math.random() - 0.5) * 0.3;  // AI: slight random
+        aimY = (Math.random() - 0.5) * 0.3;
       }
-      const angle = aimY;
 
       ball.x = serveFromLeft ? gk.x + gk.w + ball.size / 2 + 2
                              : gk.x - ball.size / 2 - 2;
-      ball.vx = Math.cos(angle) * speed * dir;
-      ball.vy = Math.sin(angle) * speed;
+      ball.vx = Math.cos(aimY) * speed * dir;
+      ball.vy = Math.sin(aimY) * speed;
       ball.z = 0;
-
-      // Down arrow = flatten the lob (hard low pass even with long charge)
-      let lobMult = 1.0;
-      if (serveFromLeft) {
-        if (keys['ArrowDown']) lobMult = 0.0;  // cancel lob — hard flat
-        if (keys['ArrowUp'])   lobMult = 1.4;  // boost lob
-      }
-      ball.vz = charge * H * LOB_POWER * lobMult;
+      ball.vz = charge * H * LOB_POWER;
 
       lastShotChargeTime = charge;
       currentMaxZ = 0;
@@ -600,18 +602,25 @@
                 // GK didn't catch — ball already deflected by hitPaddle
               }
 
-              // If Space held during deflection: add lob + direction control
+              // If Space held during deflection: shot/lob with direction
               if (spaceDown && p.isPlayer) {
-                let aimY = 0;
-                if (keys['ArrowUp'])   aimY = -0.35;
-                if (keys['ArrowDown']) aimY = 0.35;
-                ball.vy += aimY * Math.abs(ball.vx);
+                const charge = spaceHeldTime;
+                const speedMult = shotSpeedMult(charge);
 
-                // Lob: charge time controls height
-                let lobMult = 1.0;
-                if (keys['ArrowDown']) lobMult = 0.0;  // flatten
-                if (keys['ArrowUp'])   lobMult = 1.4;  // boost
-                ball.vz = spaceHeldTime * H * LOB_POWER * lobMult;
+                // Direction: arrows steer the shot
+                let aimY = 0;
+                if (keys['ArrowUp'])   aimY = -0.7;
+                if (keys['ArrowDown']) aimY = 0.7;
+
+                // Apply shot power + direction
+                const curSpeed = Math.hypot(ball.vx, ball.vy);
+                const boostedSpeed = curSpeed * speedMult;
+                const dir = ball.vx > 0 ? 1 : -1;
+                ball.vx = Math.cos(aimY) * boostedSpeed * dir;
+                ball.vy = Math.sin(aimY) * boostedSpeed;
+
+                // Lob height from charge
+                ball.vz = charge * H * LOB_POWER;
                 spaceHeldTime = 0;
               }
 
@@ -961,7 +970,7 @@
       const gt = goalTop();
       const gb = goalBottom();
       const goalNetW = W * 0.06;   // how far back the net extends in game-x
-      const goalH3d = 25;          // visual height of goal above surface
+      const goalH3d = 50;          // visual height of goal above surface
 
       [0, 1].forEach(side => {
         const isLeft = side === 0;
