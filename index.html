@@ -46,6 +46,7 @@
     const TEAM_LEFT = {
       name: 'Argentina', short: 'ARG',
       primary: '#75AADB', secondary: '#fff',
+      kit: { head: '#75AADB', jersey: '#1a2a4a', shorts: '#75AADB', boots: '#000' },
       gk:  { num: 12, name: 'Goycochea', stats: { speed: 0.7, reaction: 0.75, size: 1.0 } },
       def: [
         { num: 14, name: 'Giusti',          stats: { speed: 0.65, reaction: 0.70, size: 1.0 } },
@@ -68,6 +69,7 @@
     const TEAM_RIGHT = {
       name: 'Italy', short: 'ITA',
       primary: '#003DA5', secondary: '#fff',
+      kit: { head: '#fff', jersey: '#003DA5', shorts: '#fff', boots: '#003DA5' },
       gk:  { num: 1,  name: 'Zenga',        stats: { speed: 0.7, reaction: 0.70, size: 1.0 } },
       def: [
         { num: 2,  name: 'Bergomi',         stats: { speed: 0.65, reaction: 0.75, size: 1.05 } },
@@ -862,27 +864,38 @@
       const headR = Math.max(5, p.h * 0.12);
       const bootH = Math.max(3, p.h * 0.08);
       const bootW = p.w * 1.4;
-
       const isMatch = gameMode !== 'physics';
-      const color = isMatch ? '#000' : '#fff';
-      ctx.fillStyle = color;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
+
+      // Get team kit colors
+      const team = p.isLeft ? leftTeam : rightTeam;
+      const kit = (isMatch && team && team.data.kit) ? team.data.kit : null;
+      const fallback = isMatch ? '#000' : '#fff';
+
+      // Jersey/shorts split: top 55% jersey, bottom 45% shorts
+      const jerseySplit = p.h * 0.55;
 
       // Head
+      ctx.fillStyle = kit ? kit.head : fallback;
       ctx.beginPath();
       ctx.arc(cx, bodyTop - headR - 1, headR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Body (the paddle hitbox)
-      ctx.fillRect(p.x, bodyTop, p.w, p.h);
+      // Jersey (upper body)
+      ctx.fillStyle = kit ? kit.jersey : fallback;
+      ctx.fillRect(p.x, bodyTop, p.w, jerseySplit);
+
+      // Shorts (lower body)
+      ctx.fillStyle = kit ? kit.shorts : fallback;
+      ctx.fillRect(p.x, bodyTop + jerseySplit, p.w, p.h - jerseySplit);
 
       // Boots
+      ctx.fillStyle = kit ? kit.boots : fallback;
       ctx.fillRect(cx - bootW / 2, bodyBot, bootW * 0.4, bootH);
       ctx.fillRect(cx + bootW * 0.1, bodyBot, bootW * 0.4, bootH);
 
       // GK glove arm
       if (p.isGK) {
+        ctx.fillStyle = kit ? kit.jersey : fallback;
         const armLen = p.w * 1.8;
         const armY = bodyTop + p.h * 0.25;
         const armDir = p.isLeft ? 1 : -1;
@@ -899,7 +912,6 @@
         displayNum = p.num;
         displayName = p.name;
       } else {
-        const team = p.isLeft ? leftTeam : rightTeam;
         if (team) {
           const identity = getZoneIdentity(p, team.data);
           displayNum = identity.player.num;
@@ -911,9 +923,8 @@
       }
 
       // Label below: #NUM NAME
-      ctx.fillStyle = color;
+      ctx.fillStyle = isMatch ? '#333' : 'rgba(255,255,255,0.7)';
       ctx.font = 'bold 9px monospace';
-      // Align labels so GKs near edges don't get cut off
       if (p.isGK && p.isLeft) {
         ctx.textAlign = 'left';
         ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, p.x, bodyBot + bootH + 12);
