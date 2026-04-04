@@ -1787,9 +1787,9 @@
         // Paddle game-space corners (enlarged for 3D visibility)
         const cx = p.x + p.w / 2;
         const cy = p.y + p.h / 2;
-        let hw = p.w * 1.6;   // half-width — fatter
-        let hh = p.h * 1.1;   // half-height — taller
-        let blockH = 18;      // block height (z-axis) for 3D depth
+        let hw = p.w * 1.0;   // half-width
+        let hh = p.h * 0.7;  // half-height — shorter
+        let blockH = 12;     // block height (z-axis)
         let pz = 0;           // paddle z-offset (for jumping)
 
         // Rubber squish animation on ball hit
@@ -1904,14 +1904,6 @@
 
         ctx.save();
 
-        // ── Neon glow (outer, like 2D version) ──
-        ctx.shadowColor = '#88ddff';
-        ctx.shadowBlur = 22 * bp.scale;
-        ctx.fillStyle = 'rgba(136,221,255,0.15)';
-        ctx.beginPath();
-        ctx.arc(bp.x, bp.y, r * 1.15, 0, Math.PI * 2);
-        ctx.fill();
-
         // ── Main ball body — white sphere with 3D gradient ──
         const grad = ctx.createRadialGradient(
           bp.x - r * 0.25, bp.y - r * 0.3, r * 0.05,
@@ -1923,7 +1915,7 @@
         grad.addColorStop(1, '#888888');
 
         ctx.shadowColor = '#fff';
-        ctx.shadowBlur = 16 * bp.scale;
+        ctx.shadowBlur = 6 * bp.scale;
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(bp.x, bp.y, r, 0, Math.PI * 2);
@@ -1962,11 +1954,11 @@
           ctx.stroke();
         }
 
-        // ── Second neon glow pass (cyan, like 2D) ──
-        ctx.shadowColor = '#88ddff';
-        ctx.shadowBlur = 28 * bp.scale;
-        ctx.strokeStyle = 'rgba(136,221,255,0.3)';
-        ctx.lineWidth = 2;
+        // ── Subtle edge glow ──
+        ctx.shadowColor = 'rgba(200,220,255,0.3)';
+        ctx.shadowBlur = 6 * bp.scale;
+        ctx.strokeStyle = 'rgba(200,220,255,0.15)';
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(bp.x, bp.y, r, 0, Math.PI * 2);
         ctx.stroke();
