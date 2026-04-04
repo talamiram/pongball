@@ -41,32 +41,10 @@
     let gameMode = 'menu';
     let menuSelection = 0;  // 0 = match, 1 = physics, 2 = worldcup
 
-    // ─── TEAMS: ITALIA 90 SEMIFINAL ───
+    // ─── TEAMS: ITALIA 90 ───
+    // Player = Italy (left), AI = Brazil (right)
     // Stats: speed (movement multiplier), reaction (ball tracking), size (paddle height multiplier)
     const TEAM_LEFT = {
-      name: 'Argentina', short: 'ARG',
-      primary: '#75AADB', secondary: '#fff',
-      kit: { head: '#75AADB', jersey: '#1a2a4a', shorts: '#75AADB', boots: '#000' },
-      gk:  { num: 12, name: 'Goycochea', stats: { speed: 0.7, reaction: 0.75, size: 1.0 } },
-      def: [
-        { num: 14, name: 'Giusti',          stats: { speed: 0.65, reaction: 0.70, size: 1.0 } },
-        { num: 18, name: 'Serrizuela',      stats: { speed: 0.60, reaction: 0.65, size: 1.05 } },
-        { num: 19, name: 'Ruggeri',         stats: { speed: 0.60, reaction: 0.75, size: 1.1 } },
-        { num: 16, name: 'Olarticoechea',   stats: { speed: 0.70, reaction: 0.70, size: 0.95 } }
-      ],
-      mid: [
-        { num: 20, name: 'Simón',           stats: { speed: 0.65, reaction: 0.65, size: 1.0 } },
-        { num: 4,  name: 'Basualdo',        stats: { speed: 0.70, reaction: 0.70, size: 1.0 } },
-        { num: 7,  name: 'Burruchaga',      stats: { speed: 0.80, reaction: 0.80, size: 0.95 } },
-        { num: 6,  name: 'Calderón',        stats: { speed: 0.65, reaction: 0.65, size: 1.0 } }
-      ],
-      fwd: [
-        { num: 10, name: 'Maradona', captain: true, stats: { speed: 0.95, reaction: 0.95, size: 1.0 } },
-        { num: 8,  name: 'Caniggia',        stats: { speed: 1.0, reaction: 0.80, size: 0.9 } }
-      ]
-    };
-
-    const TEAM_RIGHT = {
       name: 'Italy', short: 'ITA',
       primary: '#003DA5', secondary: '#fff',
       kit: { head: '#fff', jersey: '#003DA5', shorts: '#fff', boots: '#003DA5' },
@@ -89,12 +67,36 @@
       ]
     };
 
+    const TEAM_RIGHT = {
+      name: 'Brazil', short: 'BRA',
+      primary: '#FFDF00', secondary: '#009739',
+      kit: { head: '#8B6914', jersey: '#FFDF00', shorts: '#003DA5', boots: '#fff' },
+      gk:  { num: 1,  name: 'Taffarel',     stats: { speed: 0.7, reaction: 0.72, size: 1.0 } },
+      def: [
+        { num: 2,  name: 'Jorginho',        stats: { speed: 0.75, reaction: 0.70, size: 1.0 } },
+        { num: 3,  name: 'Ricardo Gomes',   stats: { speed: 0.60, reaction: 0.80, size: 1.1 } },
+        { num: 4,  name: 'Mauro Galvão',    stats: { speed: 0.65, reaction: 0.75, size: 1.05 } },
+        { num: 6,  name: 'Branco',          stats: { speed: 0.70, reaction: 0.70, size: 1.0 } }
+      ],
+      mid: [
+        { num: 8,  name: 'Dunga', captain: true, stats: { speed: 0.70, reaction: 0.80, size: 1.0 } },
+        { num: 5,  name: 'Alemão',          stats: { speed: 0.75, reaction: 0.75, size: 1.0 } },
+        { num: 10, name: 'Valdo',           stats: { speed: 0.80, reaction: 0.80, size: 0.95 } },
+        { num: 7,  name: 'Müller',          stats: { speed: 0.85, reaction: 0.75, size: 0.95 } }
+      ],
+      fwd: [
+        { num: 11, name: 'Careca',          stats: { speed: 0.90, reaction: 0.85, size: 0.95 } },
+        { num: 20, name: 'Bebeto',          stats: { speed: 0.95, reaction: 0.80, size: 0.9 } }
+      ]
+    };
+
     // ─── CONSTANTS ───
-    const PADDLE_W_GK = 12;
-    const PADDLE_W_OF = 12;
-    const GK_H_RATIO = 0.07;
-    const OUTFIELD_H_RATIO = 0.07;
-    const BALL_SIZE = 7;
+    const PADDLE_W_GK = 16;
+    const PADDLE_W_OF = 16;
+    const GK_H_RATIO = 0.08;
+    const OUTFIELD_H_RATIO = 0.08;
+    const BALL_SIZE = 12;
+    const GOAL_LINE_RATIO = 0.02;  // goal lines sit 2% in from edges (on the grass)
 
     const BALL_SPEED = 0.30;
     const BALL_MAX_SPEED = 0.60;
@@ -147,6 +149,10 @@
     let lastShotChargeTime = 0;
     let lastShotMaxZ = 0;
     let currentMaxZ = 0;
+
+    // Fly-in animation state
+    let flyInProgress = 1;  // 0 = zoomed out, 1 = normal (start at 1 = no fly-in)
+    let flyInStartTime = 0;
 
     window.addEventListener('keydown', e => {
       keys[e.code] = true;
@@ -306,6 +312,14 @@
       lastShotChargeTime = 0; lastShotMaxZ = 0; currentMaxZ = 0;
       resetAfterGoal(true);
       lastTime = performance.now();
+
+      // Fly-in animation for match mode
+      if (mode === 'match') {
+        flyInProgress = 0;
+        flyInStartTime = performance.now();
+      } else {
+        flyInProgress = 1;
+      }
     }
 
     function resetAfterGoal(servingLeft) {
@@ -511,8 +525,10 @@
     function checkGoalPosts() {
       const gt = goalTop();
       const gb = goalBottom();
+      const glL = W * GOAL_LINE_RATIO;
+      const glR = W * (1 - GOAL_LINE_RATIO);
 
-      if (ball.x - ball.size / 2 < GOAL_DEPTH) {
+      if (ball.x - ball.size / 2 < glL + GOAL_DEPTH) {
         if (ball.y - ball.size / 2 < gt && ball.y + ball.size / 2 > gt - POST_THICK) {
           ball.y = gt - POST_THICK - ball.size / 2;
           ball.vy = -Math.abs(ball.vy) * 0.8;
@@ -523,14 +539,14 @@
           ball.vy = Math.abs(ball.vy) * 0.8;
           return 'post';
         }
-        if (ball.x - ball.size / 2 < 2 && (ball.y < gt || ball.y > gb)) {
-          ball.x = ball.size / 2 + 2;
+        if (ball.x - ball.size / 2 < glL && (ball.y < gt || ball.y > gb)) {
+          ball.x = glL + ball.size / 2;
           ball.vx = Math.abs(ball.vx) * 0.85;
           return 'wall';
         }
       }
 
-      if (ball.x + ball.size / 2 > W - GOAL_DEPTH) {
+      if (ball.x + ball.size / 2 > glR - GOAL_DEPTH) {
         if (ball.y - ball.size / 2 < gt && ball.y + ball.size / 2 > gt - POST_THICK) {
           ball.y = gt - POST_THICK - ball.size / 2;
           ball.vy = -Math.abs(ball.vy) * 0.8;
@@ -541,8 +557,8 @@
           ball.vy = Math.abs(ball.vy) * 0.8;
           return 'post';
         }
-        if (ball.x + ball.size / 2 > W - 2 && (ball.y < gt || ball.y > gb)) {
-          ball.x = W - ball.size / 2 - 2;
+        if (ball.x + ball.size / 2 > glR && (ball.y < gt || ball.y > gb)) {
+          ball.x = glR - ball.size / 2;
           ball.vx = -Math.abs(ball.vx) * 0.85;
           return 'wall';
         }
@@ -640,12 +656,14 @@
         const gb = goalBottom();
 
         // Goals — lobs CAN score (airborne or not)
-        if (ball.x + ball.size / 2 < 0 && ball.y > gt && ball.y < gb) {
+        const goalLineL = W * GOAL_LINE_RATIO;
+        const goalLineR = W * (1 - GOAL_LINE_RATIO);
+        if (ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
           scoreR++;
           resetAfterGoal(true);
           return;
         }
-        if (ball.x - ball.size / 2 > W && ball.y > gt && ball.y < gb) {
+        if (ball.x + ball.size / 2 > goalLineR && ball.y > gt && ball.y < gb) {
           scoreL++;
           lastShotMaxZ = currentMaxZ;
           resetAfterGoal(false);
@@ -653,13 +671,15 @@
         }
 
         // Wall bounce outside goal mouth (and airborne over goal)
+        const wbL = W * GOAL_LINE_RATIO;
+        const wbR = W * (1 - GOAL_LINE_RATIO);
         if (ball.y <= gt || ball.y >= gb || airborne) {
-          if (ball.x - ball.size / 2 < 2) {
-            ball.x = ball.size / 2 + 2;
+          if (ball.x - ball.size / 2 < wbL) {
+            ball.x = wbL + ball.size / 2;
             ball.vx = Math.abs(ball.vx) * 0.7;
           }
-          if (ball.x + ball.size / 2 > W - 2) {
-            ball.x = W - ball.size / 2 - 2;
+          if (ball.x + ball.size / 2 > wbR) {
+            ball.x = wbR - ball.size / 2;
             ball.vx = -Math.abs(ball.vx) * 0.7;
           }
         }
@@ -787,20 +807,26 @@
         return;
       }
 
-      // ========== MATCH MODE: Perspective field (Atari table style) ==========
+      // ========== MATCH MODE: Perspective field (Atari coffee table style) ==========
 
-      // Light background (like the SVG mockup)
-      ctx.fillStyle = '#f0ede8';
+      // Dark background (like arcade coffee table)
+      ctx.fillStyle = '#0a0a0a';
       ctx.fillRect(0, 0, W, H);
 
+      // Fly-in animation: interpolate from distant view to normal
+      const fi = flyInProgress;  // 0=far, 1=normal
+      const fiScale = 0.3 + fi * 0.7;  // start at 30% size
+      const fiOffY = (1 - fi) * H * 0.15;  // drift down as we approach
+
       // Perspective field corners (wider at bottom = closer to viewer)
-      const pTopY = H * 0.14;    // far edge y
-      const pBotY = H * 0.80;    // near edge y
-      const pTopL = W * 0.22;    // far-left x
-      const pTopR = W * 0.78;    // far-right x
-      const pBotL = W * 0.04;    // near-left x
-      const pBotR = W * 0.96;    // near-right x
-      const baseH = H * 0.12;    // 3D base depth below field
+      const cxF = W * 0.5, cyF = H * 0.47;
+      const pTopY = cyF + (H * 0.14 - cyF) * fiScale + fiOffY;
+      const pBotY = cyF + (H * 0.80 - cyF) * fiScale + fiOffY;
+      const pTopL = cxF + (W * 0.22 - cxF) * fiScale;
+      const pTopR = cxF + (W * 0.78 - cxF) * fiScale;
+      const pBotL = cxF + (W * 0.04 - cxF) * fiScale;
+      const pBotR = cxF + (W * 0.96 - cxF) * fiScale;
+      const baseH = H * 0.12 * fiScale;
 
       // Helper: interpolate field edges at a given t (0=top, 1=bottom)
       function fieldEdge(t) {
@@ -828,8 +854,8 @@
       _toScreen = toScreen;
       _perspScale = perspScaleAt;
 
-      // --- 3D base (front face below field) — light gray ---
-      ctx.fillStyle = '#d8d4ce';
+      // --- 3D base (front face below field) — dark wood tone ---
+      ctx.fillStyle = '#2a1f18';
       ctx.beginPath();
       ctx.moveTo(pBotL, pBotY);
       ctx.lineTo(pBotR, pBotY);
@@ -839,7 +865,7 @@
       ctx.fill();
 
       // Right side face
-      ctx.fillStyle = '#c8c4be';
+      ctx.fillStyle = '#1e1510';
       ctx.beginPath();
       ctx.moveTo(pTopR, pTopY);
       ctx.lineTo(pBotR, pBotY);
@@ -848,8 +874,8 @@
       ctx.closePath();
       ctx.fill();
 
-      // --- White field border ---
-      ctx.fillStyle = '#f5f2ed';
+      // --- Dark brown field border (arcade table frame) ---
+      ctx.fillStyle = '#3a2e24';
       ctx.beginPath();
       ctx.moveTo(pTopL, pTopY); ctx.lineTo(pTopR, pTopY);
       ctx.lineTo(pBotR, pBotY); ctx.lineTo(pBotL, pBotY);
@@ -966,16 +992,16 @@
       }
       ctx.stroke();
 
-      // ========== Goals (3D wireframe in perspective) ==========
+      // ========== Goals (3D wireframe in perspective — ON the grass) ==========
       const gt = goalTop();
       const gb = goalBottom();
-      const goalNetW = W * 0.06;   // how far back the net extends in game-x
-      const goalH3d = 50;          // visual height of goal above surface
+      const goalNetW = W * 0.05;   // how far back the net extends in game-x
+      const goalH3d = 55;          // visual height of goal above surface
 
       [0, 1].forEach(side => {
         const isLeft = side === 0;
-        const postGX = isLeft ? 0 : W;          // game-x of goal line
-        const backGX = isLeft ? -goalNetW : W + goalNetW;
+        const postGX = isLeft ? W * GOAL_LINE_RATIO : W * (1 - GOAL_LINE_RATIO);
+        const backGX = isLeft ? postGX - goalNetW : postGX + goalNetW;
 
         // 4 base corners (on field surface)
         const ftl = toScreen(postGX, gt);
@@ -1095,10 +1121,10 @@
         return;
       }
 
-      // ===== Match mode: White 3D block (Atari style) with team color stripes =====
+      // ===== Match mode: Chunky white 3D block (Atari coffee table) with team color stripes =====
       const kit = (team && team.data.kit) ? team.data.kit : null;
       const teamColor = kit ? kit.jersey : '#003DA5';
-      const blockH = 20;
+      const blockH = 28;
 
       // Paddle game-space corners
       const gx1 = p.x, gx2 = p.x + p.w;
@@ -1118,24 +1144,24 @@
       const brT = { x: br.x, y: br.y - bh * (_perspScale(gy2) / scale) };
       const blT = { x: bl.x, y: bl.y - bh * (_perspScale(gy2) / scale) };
 
-      // Front face (light gray — shadow side)
-      ctx.fillStyle = '#d0ccc6';
+      // Front face (medium gray — shadow side)
+      ctx.fillStyle = '#c8c4be';
       ctx.beginPath();
       ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y);
       ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
       ctx.closePath();
       ctx.fill();
 
-      // Right side face (slightly darker gray)
-      ctx.fillStyle = '#c4c0ba';
+      // Right side face (darker gray)
+      ctx.fillStyle = '#b0aca6';
       ctx.beginPath();
       ctx.moveTo(tr.x, tr.y); ctx.lineTo(br.x, br.y);
       ctx.lineTo(brT.x, brT.y); ctx.lineTo(trT.x, trT.y);
       ctx.closePath();
       ctx.fill();
 
-      // Top face (white)
-      ctx.fillStyle = '#f0ede8';
+      // Top face (bright white — stands out on dark table)
+      ctx.fillStyle = '#f5f2ed';
       ctx.beginPath();
       ctx.moveTo(tlT.x, tlT.y); ctx.lineTo(trT.x, trT.y);
       ctx.lineTo(brT.x, brT.y); ctx.lineTo(blT.x, blT.y);
@@ -1183,7 +1209,7 @@
 
       // Label below block: #NUM NAME
       const fontSize = Math.max(7, Math.round(9 * scale));
-      ctx.fillStyle = 'rgba(80,75,70,0.8)';
+      ctx.fillStyle = 'rgba(200,195,190,0.7)';
       ctx.font = `bold ${fontSize}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
@@ -1229,38 +1255,88 @@
         return;
       }
 
-      // Match mode: perspective ball
+      // Match mode: perspective ball — shiny football
       const sp = _toScreen(ball.x, ball.y);
       const scale = _perspScale(ball.y);
       const drawR = ball.size * scale * (1 + zPx / 300);
+      const r = drawR * 0.85;
 
       // Ground shadow
       if (zPx > 2) {
-        const shadowAlpha = Math.max(0.05, 0.25 - zPx / 400);
+        const shadowAlpha = Math.max(0.05, 0.3 - zPx / 350);
         ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
         ctx.beginPath();
-        ctx.ellipse(sp.x, sp.y, drawR * 1.2, drawR * 0.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(sp.x, sp.y, r * 1.4, r * 0.55, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Ball (white filled with dark outline)
       const bx = sp.x;
       const by = sp.y - zPx * scale;
-      ctx.fillStyle = '#fff';
+
+      // Ball body — white with radial gradient for shine
+      const grad = ctx.createRadialGradient(bx - r * 0.3, by - r * 0.3, r * 0.1, bx, by, r);
+      grad.addColorStop(0, '#fff');
+      grad.addColorStop(0.5, '#f0ede8');
+      grad.addColorStop(0.85, '#d8d4ce');
+      grad.addColorStop(1, '#b0aca6');
+      ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(bx, by, drawR * 0.7, 0, Math.PI * 2);
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#555';
-      ctx.lineWidth = 1.5;
+
+      // Pentagon pattern (football look) — small dark patches
+      ctx.fillStyle = 'rgba(40,35,30,0.55)';
+      const pentR = r * 0.28;
+      // Center pentagon
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+        const px = bx + Math.cos(a) * pentR;
+        const py = by + Math.sin(a) * pentR;
+        if (i === 0) ctx.beginPath(), ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Outer pentagons (partial, just hints)
+      const outerAngles = [0, Math.PI * 0.6, Math.PI * 1.2, Math.PI * 1.55, Math.PI * 0.3];
+      ctx.fillStyle = 'rgba(40,35,30,0.3)';
+      outerAngles.forEach(oa => {
+        const cx2 = bx + Math.cos(oa) * r * 0.58;
+        const cy2 = by + Math.sin(oa) * r * 0.58;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 + oa;
+          const px = cx2 + Math.cos(a) * pentR * 0.6;
+          const py = cy2 + Math.sin(a) * pentR * 0.6;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      // Glossy highlight
+      const shineGrad = ctx.createRadialGradient(bx - r * 0.25, by - r * 0.3, 0, bx - r * 0.25, by - r * 0.3, r * 0.6);
+      shineGrad.addColorStop(0, 'rgba(255,255,255,0.7)');
+      shineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = shineGrad;
       ctx.beginPath();
-      ctx.arc(bx, by, drawR * 0.6, 0, Math.PI * 2);
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Subtle outline
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
       ctx.stroke();
     }
 
     function drawHUD() {
       const isMatch = gameMode !== 'physics';
-      const fg = isMatch ? '#333' : '#fff';
-      const fgAlpha = isMatch ? 'rgba(50,50,50,' : 'rgba(255,255,255,';
+      const fg = '#fff';
+      const fgAlpha = 'rgba(255,255,255,';
 
       // Charge indicator (lob power) — shows during serve or when Space held in play
       if (spaceDown && ((ballState === 'on_gk' && serveFromLeft) || ballState === 'live')) {
@@ -1280,17 +1356,20 @@
 
     function drawScoreboard() {
       const isMatch = gameMode !== 'physics';
+      // Score positioned top-left area (Atari style)
+      const sx = W * 0.12;
+      const sy = 38;
       ctx.font = 'bold 13px monospace';
-      ctx.fillStyle = isMatch ? TEAM_LEFT.primary : TEAM_LEFT.primary;
+      ctx.fillStyle = isMatch ? '#8ab4e8' : TEAM_LEFT.primary;  // lighter blue on dark
       ctx.textAlign = 'right';
-      ctx.fillText(TEAM_LEFT.short, W / 2 - 45, 48);
-      ctx.fillStyle = isMatch ? TEAM_RIGHT.primary : TEAM_RIGHT.primary;
+      ctx.fillText(TEAM_LEFT.short, sx - 10, sy);
+      ctx.fillStyle = isMatch ? '#ffe066' : TEAM_RIGHT.primary;  // lighter yellow on dark
       ctx.textAlign = 'left';
-      ctx.fillText(TEAM_RIGHT.short, W / 2 + 45, 48);
-      ctx.fillStyle = isMatch ? '#333' : '#fff';
+      ctx.fillText(TEAM_RIGHT.short, sx + 80, sy);
+      ctx.fillStyle = '#fff';
       ctx.font = 'bold 28px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, 50);
+      ctx.fillText(`${scoreL} - ${scoreR}`, sx + 35, sy + 4);
     }
 
     function drawPlayerLabel() {
@@ -1370,8 +1449,8 @@
     // ═══════════════════════════════
     // ─── ITALIA '90 LOGO (drawn programmatically) ───
     function drawLogo() {
-      const x = 12, y = 10;
-      const s = 0.55;  // scale
+      const x = W * 0.65, y = 10;
+      const s = 0.85;  // scale — bigger
 
       ctx.save();
       ctx.translate(x, y);
@@ -1389,7 +1468,7 @@
       ctx.lineTo(cx - 16, cy - 8); ctx.lineTo(cx - 26, cy - 16);
       ctx.closePath(); ctx.fill();
 
-      ctx.fillStyle = '#3a3a3a';
+      ctx.fillStyle = '#e0ddd8';
       ctx.beginPath();
       ctx.moveTo(cx - 12, cy - 30); ctx.lineTo(cx - 2, cy - 22);
       ctx.lineTo(cx - 8, cy - 12); ctx.lineTo(cx - 20, cy - 18);
@@ -1402,7 +1481,7 @@
       ctx.lineTo(cx + 18, cy - 8); ctx.lineTo(cx + 12, cy - 18);
       ctx.closePath(); ctx.fill();
 
-      ctx.fillStyle = '#3a3a3a';
+      ctx.fillStyle = '#e0ddd8';
       ctx.beginPath();
       ctx.moveTo(cx + 6, cy - 28); ctx.lineTo(cx + 16, cy - 26);
       ctx.lineTo(cx + 22, cy - 16); ctx.lineTo(cx + 10, cy - 14);
@@ -1415,7 +1494,7 @@
       ctx.lineTo(cx - 6, cy + 6); ctx.lineTo(cx - 14, cy + 16);
       ctx.closePath(); ctx.fill();
 
-      ctx.fillStyle = '#3a3a3a';
+      ctx.fillStyle = '#e0ddd8';
       ctx.beginPath();
       ctx.moveTo(cx - 20, cy - 2); ctx.lineTo(cx - 10, cy - 6);
       ctx.lineTo(cx - 2, cy + 4); ctx.lineTo(cx - 10, cy + 12);
@@ -1429,7 +1508,7 @@
       ctx.lineTo(cx, cy + 14);
       ctx.closePath(); ctx.fill();
 
-      ctx.fillStyle = '#3a3a3a';
+      ctx.fillStyle = '#e0ddd8';
       ctx.beginPath();
       ctx.moveTo(cx + 2, cy); ctx.lineTo(cx + 12, cy - 6);
       ctx.lineTo(cx + 20, cy + 4); ctx.lineTo(cx + 14, cy + 14);
@@ -1444,7 +1523,7 @@
       ctx.closePath(); ctx.fill();
 
       // Motion lines under ball
-      ctx.strokeStyle = '#3a3a3a';
+      ctx.strokeStyle = '#e0ddd8';
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(cx - 6, cy + 22); ctx.quadraticCurveTo(cx, cy + 20, cx + 6, cy + 22); ctx.stroke();
@@ -1452,7 +1531,7 @@
       ctx.beginPath(); ctx.moveTo(cx - 8, cy + 27); ctx.quadraticCurveTo(cx, cy + 24, cx + 8, cy + 27); ctx.stroke();
 
       // "ITALIA'90" text in angular style
-      ctx.fillStyle = '#3a3a3a';
+      ctx.fillStyle = '#e0ddd8';
       ctx.font = 'bold 18px sans-serif';
       ctx.textAlign = 'center';
       ctx.letterSpacing = '2px';
@@ -1461,19 +1540,62 @@
       ctx.restore();
     }
 
+    // ─── GLASS OVERLAY (arcade coffee table effect) ───
+    function drawGlassOverlay() {
+      // Subtle reflection streak across the top
+      const grad = ctx.createLinearGradient(0, 0, W, H * 0.5);
+      grad.addColorStop(0, 'rgba(255,255,255,0.02)');
+      grad.addColorStop(0.3, 'rgba(255,255,255,0.06)');
+      grad.addColorStop(0.5, 'rgba(255,255,255,0.02)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Diagonal light streak (like overhead light on glass)
+      ctx.save();
+      ctx.globalAlpha = 0.035;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(W * 0.1, 0);
+      ctx.lineTo(W * 0.35, 0);
+      ctx.lineTo(W * 0.75, H);
+      ctx.lineTo(W * 0.5, H);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Subtle vignette around edges (dark corners)
+      const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.3)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+    }
+
     function render() {
+      // Fly-in animation tick
+      if (flyInProgress < 1) {
+        const elapsed = (performance.now() - flyInStartTime) / 1000;
+        const duration = 1.5;
+        flyInProgress = Math.min(1, elapsed / duration);
+        // Ease out cubic
+        flyInProgress = 1 - Math.pow(1 - flyInProgress, 3);
+      }
+
       drawField();
-      allPaddles.forEach(drawPaddle);
-      drawBall();
-      drawHUD();
+      if (flyInProgress >= 1) {
+        allPaddles.forEach(drawPaddle);
+        drawBall();
+        drawHUD();
+      }
       drawScoreboard();
       drawPlayerLabel();
 
       if (gameMode === 'physics') {
         drawPhysicsHUD();
       } else {
-        // Italia '90 logo top-left
         drawLogo();
+        drawGlassOverlay();
       }
     }
 
