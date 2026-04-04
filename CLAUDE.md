@@ -151,12 +151,13 @@ All sizes are responsive (height as ratio of screen H):
 | Role | Width (px) | Height (ratio of H) |
 |---|---|---|
 | GK | 8 | 0.07 |
-| DEF | 5 | 0.045 |
-| MID | 5 | 0.038 |
-| FWD | 5 | 0.05 |
-| Player (Maradona) | 7 | 0.055 |
+| DEF | 7 | 0.045 |
+| MID | 7 | 0.038 |
+| FWD (both forwards) | 7 | 0.05 |
 
 Paddles are deliberately small so the ball can find gaps in the formation. The formation grid is porous — flat shots CAN get through, but lobbing over is safer.
+
+**Important: Both main forwards (Maradona and Schillaci) should be visually similar in size.** The player's advantage comes from being human-controlled (better decisions, timing), NOT from having a bigger paddle. Don't give the player paddle a noticeably larger height ratio or size multiplier. Use the same base FWD height ratio for both — any stat-based `size` variation should be subtle (±5% max, not 15%+).
 
 ---
 
