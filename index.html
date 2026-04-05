@@ -1079,7 +1079,7 @@
         return;
       }
 
-      // All other zones: LOB — hold Space longer = higher but slower lob
+      // All zones: short tap = flat power shot, longer hold = lob
       let aimY = 0;
       if (paddle.isPlayer) {
         if (keys['ArrowUp'])   aimY = -0.5;
@@ -1088,13 +1088,19 @@
         aimY = (Math.random() - 0.5) * 0.4;
       }
 
-      const lobCharge = Math.max(charge, 0.35);
-      // Higher lob = less horizontal speed (energy tradeoff)
-      const lobFactor = Math.max(0.3, 1 - lobCharge * 0.45);
+      // Short tap (charge < 0.15): flat power shot — no lob at all
+      // Medium (0.15–0.6): low-to-medium lob, clears paddles
+      // Long (0.6–1.0): high lob — max peak ~30% of screen height
+      const isFlat = charge < 0.15;
+      const rawLob = isFlat ? 0 : Math.min((charge - 0.15) / 0.85, 1.0);
+      const lobAmount = Math.pow(rawLob, 0.6);  // ramp up faster for short holds
+      // Horizontal speed: flat shots full speed, lobs trade height for speed
+      const lobFactor = isFlat ? 1.0 : Math.max(0.4, 1 - lobAmount * 0.45);
       const speed = W * BALL_SPEED * lobFactor;
       ball.vx = Math.cos(aimY) * speed * dir;
       ball.vy = Math.sin(aimY) * speed;
-      ball.vz = lobCharge * H * LOB_POWER;
+      // Lob height: H * 0.55 max gives ~220px peak on 720p (visible but not insane)
+      ball.vz = lobAmount * H * 0.55;
       ball.curve = 0;
 
       ball.z = 0;
