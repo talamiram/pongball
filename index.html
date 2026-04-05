@@ -695,14 +695,14 @@
     const BALL_SIZE = 12;
     const GOAL_LINE_RATIO = 0.02;
 
-    const BALL_SPEED = 0.20;
-    const BALL_MAX_SPEED = 0.40;
-    const BALL_ACCEL = 1.02;
+    const BALL_SPEED = 0.24;      // base ball speed (faster = more dynamic)
+    const BALL_MAX_SPEED = 0.45;
+    const BALL_ACCEL = 1.04;      // each hit accelerates more
     const SPEED_3D = 1.30;  // 3D field is visually smaller, so speed up to compensate
     const MAX_BOUNCE_ANGLE = Math.PI / 3;
     const HOLD_TIME_LIMIT = 2.0;
 
-    const GRAVITY = 350;
+    const GRAVITY = 650;   // higher gravity = lobs come back faster, game stays fluid
     const LOB_POWER = 2.2;
     const AIR_THRESHOLD = 10;
 
@@ -712,7 +712,7 @@
 
     const MATCH_TIME = 90;  // 90-second match
     const AI_SKILL = 0.80;
-    const PADDLE_SPEED_RATIO = 0.50;
+    const PADDLE_SPEED_RATIO = 0.52;  // fast but smooth (velocity-based accel handles the feel)
 
     // Zone x-boundaries (ratio of W, for left team — right is mirrored)
     const ZONE_BOX = 0.05;   // 0.00 – 0.05 = keeper zone
@@ -767,6 +767,10 @@
 
     let playerVelY = 0;
     let playerPrevY = 0;
+    // Smooth paddle movement — velocity-based with acceleration & friction
+    let padVx = 0, padVy = 0;  // current paddle velocity
+    const PAD_ACCEL = 8.0;     // acceleration multiplier (reaches max speed in ~0.12s)
+    const PAD_FRICTION = 0.08; // friction when no key held (stops in ~0.08s)
 
     const keys = {};
     const justReleased = {};
@@ -997,6 +1001,7 @@
       foulState = null; foulCooldown = 0;
       cardBook = {}; redCardsLeft = 0; redCardsRight = 0;
       lastShotChargeTime = 0; lastShotMaxZ = 0; currentMaxZ = 0;
+      padVx = 0; padVy = 0;  // reset smooth movement velocity
       resetAfterGoal(true);  // left team (conceding side) starts with ball
       goalPause = 0;  // no pause at kickoff (resetAfterGoal sets 0.8s pause for goals)
       lastTime = performance.now();
@@ -1053,7 +1058,7 @@
       ball.vx = Math.cos(aimY) * speed * dir;
       ball.vy = Math.sin(aimY) * speed;
       ball.z = 0;
-      ball.vz = charge * H * LOB_POWER * 0.5;  // gentle lob on distribute
+      ball.vz = charge * H * 0.35;  // gentle lob on distribute (matches new gravity)
       ball.curve = 0;
 
       lastShotChargeTime = charge;
@@ -1099,8 +1104,8 @@
       const speed = W * BALL_SPEED * lobFactor;
       ball.vx = Math.cos(aimY) * speed * dir;
       ball.vy = Math.sin(aimY) * speed;
-      // Lob height: H * 0.55 max gives ~220px peak on 720p (visible but not insane)
-      ball.vz = lobAmount * H * 0.55;
+      // Lob height: H * 0.45 max with GRAVITY 650 → ~110px peak, ~1.0s airtime
+      ball.vz = lobAmount * H * 0.45;
       ball.curve = 0;
 
       ball.z = 0;
@@ -1175,11 +1180,12 @@
           ball.x = p.x - ball.size / 2 - 1;
         }
 
-        // Normal Pong deflection
+        // Normal Pong deflection — always punchy, never sluggish
         const hitPos = (ball.y - (p.y + p.h / 2)) / (p.h / 2);
         const angle = clamp(hitPos, -1, 1) * MAX_BOUNCE_ANGLE;
         const currentSpeed = Math.hypot(ball.vx, ball.vy);
-        const newSpeed = Math.min(currentSpeed * BALL_ACCEL, W * BALL_MAX_SPEED);
+        const minSpeed = W * BALL_SPEED;  // floor: never slower than base speed
+        const newSpeed = Math.min(Math.max(currentSpeed, minSpeed) * BALL_ACCEL, W * BALL_MAX_SPEED);
         const deflectDir = p.isLeft ? 1 : -1;
 
         ball.vx = Math.cos(angle) * newSpeed * deflectDir;
@@ -1268,9 +1274,9 @@
               playLandingThud(landingImpact);
             }
             ball.z = 0; ball.vz = 0;
-            // Landing friction — ball slows down on contact with surface
-            ball.vx *= 0.80;
-            ball.vy *= 0.80;
+            // Landing friction — slight slowdown, not too much to keep it dynamic
+            ball.vx *= 0.90;
+            ball.vy *= 0.90;
           }
           if (ball.z > currentMaxZ) currentMaxZ = ball.z;
         }
@@ -1430,25 +1436,53 @@
       const aiPad = rightTeam.paddle;
       const pSpeed = H * PADDLE_SPEED_RATIO;
 
-      // ── Player movement (full pitch, slowed in opponent's half) ──
+      // ── Player movement (velocity-based, smooth acceleration) ──
       if (playerPaddle) {
         const px = playerPaddle.x + playerPaddle.w / 2;
         const inEnemyHalf = px > W * 0.5;
-        let speedMult = inEnemyHalf ? 0.65 : 1.0;  // slower in enemy half
-        if (redCardsLeft > 0) speedMult *= (11 - redCardsLeft) / 11;  // down a man
-        if (keys['ArrowUp'])    playerPaddle.y -= pSpeed * speedMult * dt;
-        if (keys['ArrowDown'])  playerPaddle.y += pSpeed * speedMult * dt;
-        if (keys['ArrowLeft'])  playerPaddle.x -= pSpeed * speedMult * dt;
-        if (keys['ArrowRight']) playerPaddle.x += pSpeed * speedMult * dt;
+        let speedMult = inEnemyHalf ? 0.65 : 1.0;
+        if (redCardsLeft > 0) speedMult *= (11 - redCardsLeft) / 11;
+        const maxSpd = pSpeed * speedMult;
+
+        // Target velocity from keys
+        let tx = 0, ty = 0;
+        if (keys['ArrowUp'])    ty -= 1;
+        if (keys['ArrowDown'])  ty += 1;
+        if (keys['ArrowLeft'])  tx -= 1;
+        if (keys['ArrowRight']) tx += 1;
+        // Normalize diagonal so it's not faster
+        const tLen = Math.sqrt(tx * tx + ty * ty) || 1;
+        tx = (tx / tLen) * maxSpd;
+        ty = (ty / tLen) * maxSpd;
+
+        // Accelerate toward target velocity, decelerate with friction
+        const accelRate = PAD_ACCEL * maxSpd;  // px/s² — reaches max in ~0.12s
+        if (tx !== 0) {
+          padVx += (tx > padVx ? 1 : -1) * Math.min(accelRate * dt, Math.abs(tx - padVx));
+        } else {
+          // Friction: decelerate quickly when no key
+          padVx *= Math.pow(PAD_FRICTION, dt);
+          if (Math.abs(padVx) < 5) padVx = 0;
+        }
+        if (ty !== 0) {
+          padVy += (ty > padVy ? 1 : -1) * Math.min(accelRate * dt, Math.abs(ty - padVy));
+        } else {
+          padVy *= Math.pow(PAD_FRICTION, dt);
+          if (Math.abs(padVy) < 5) padVy = 0;
+        }
+
+        playerPaddle.x += padVx * dt;
+        playerPaddle.y += padVy * dt;
+
         // Magnetic pull back toward own half when in opponent's territory
         if (inEnemyHalf) {
-          const overBy = (px - W * 0.5) / (W * 0.5);  // 0-1 how deep in enemy half
-          playerPaddle.x -= overBy * pSpeed * 0.3 * dt;  // gentle pull back
+          const overBy = (px - W * 0.5) / (W * 0.5);
+          playerPaddle.x -= overBy * pSpeed * 0.3 * dt;
         }
         playerPaddle.x = clamp(playerPaddle.x, 0, W - playerPaddle.w);
         playerPaddle.y = clamp(playerPaddle.y, 0, H - playerPaddle.h);
 
-        playerVelY = (playerPaddle.y - playerPrevY) / Math.max(dt, 0.001);
+        playerVelY = padVy;  // used for ball spin on hit
         playerPrevY = playerPaddle.y;
       }
 
@@ -1475,13 +1509,14 @@
       // Foul cooldown
       if (foulCooldown > 0) foulCooldown -= dt;
 
-      // ── Paddle-to-paddle collision → foul (aggressor = moving toward opponent) ──
+      // ── Paddle-to-paddle collision → foul (rare, only significant clashes) ──
       if (playerPaddle && aiPad && ballState === 'live' && foulCooldown <= 0 && !foulState) {
-        const overlap = playerPaddle.x + playerPaddle.w > aiPad.x &&
-                        playerPaddle.x < aiPad.x + aiPad.w &&
-                        playerPaddle.y + playerPaddle.h > aiPad.y &&
-                        playerPaddle.y < aiPad.y + aiPad.h;
-        if (overlap) {
+        // Require real overlap (not just edge touch) — paddles must overlap by 3+ px
+        const overlapX = Math.min(playerPaddle.x + playerPaddle.w, aiPad.x + aiPad.w) - Math.max(playerPaddle.x, aiPad.x);
+        const overlapY = Math.min(playerPaddle.y + playerPaddle.h, aiPad.y + aiPad.h) - Math.max(playerPaddle.y, aiPad.y);
+        const overlap = overlapX > 3 && overlapY > 3;
+        // Only 10% of collisions become fouls — most are just jostling
+        if (overlap && Math.random() < 0.10) {
           const foulX = (playerPaddle.x + aiPad.x) / 2 + playerPaddle.w / 2;
           const foulY = (playerPaddle.y + aiPad.y) / 2 + playerPaddle.h / 2;
 
@@ -1548,8 +1583,8 @@
             message = `${foulerName} — WARNED BY REFEREE`;
           }
 
-          foulState = { x: foulX, y: foulY, team: foulingTeam, timer: 3.0, isPenalty, message, cardType };
-          foulCooldown = 8.0;  // 8 seconds between fouls
+          foulState = { x: foulX, y: foulY, team: foulingTeam, timer: 2.0, isPenalty, message, cardType };
+          foulCooldown = 25.0;  // 25 seconds between fouls — keeps game fluid
 
           // Place ball at foul spot for free kick (awarded to fouled team)
           ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.curve = 0;
@@ -1568,12 +1603,38 @@
           holdTimer = 0;
           stickBallToFront(holdPaddle);
 
-          // Push paddles apart (back to own halves)
-          if (playerInEnemyHalf) {
-            playerPaddle.x = Math.min(playerPaddle.x, W * 0.48 - playerPaddle.w);
-          }
-          if (aiInEnemyHalf) {
-            aiPad.x = Math.max(aiPad.x, W * 0.52);
+          if (isPenalty) {
+            // Penalty: kicker at penalty spot, only GK defends (no wall)
+            if (foulingTeam === 'left') {
+              // Player fouled in own box → AI takes penalty
+              aiPad.x = W * 0.15;  // penalty spot area
+              aiPad.y = H * 0.5 - aiPad.h / 2;
+              playerPaddle.x = W * 0.02;  // GK on goal line
+              playerPaddle.y = H * 0.5 - playerPaddle.h / 2;
+              padVx = 0; padVy = 0;
+            } else {
+              // AI fouled in own box → player takes penalty
+              playerPaddle.x = W * 0.82;  // penalty spot area
+              playerPaddle.y = H * 0.5 - playerPaddle.h / 2;
+              padVx = 0; padVy = 0;
+              aiPad.x = W * 0.96;  // GK on goal line
+              aiPad.y = H * 0.5 - aiPad.h / 2;
+            }
+          } else {
+            // Free kick wall: position opposing paddle at a distance from the ball
+            const wallDist = W * 0.12;  // ~10 yards in football terms
+            if (foulingTeam === 'left') {
+              // Player fouled → AI gets free kick → player forms wall
+              const wallX = Math.max(ball.x - wallDist, W * 0.02);
+              playerPaddle.x = wallX - playerPaddle.w;
+              playerPaddle.y = clamp(ball.y - playerPaddle.h / 2, 0, H - playerPaddle.h);
+              padVx = 0; padVy = 0;
+            } else {
+              // AI fouled → player gets free kick → AI forms wall
+              const wallX = Math.min(ball.x + wallDist, W * 0.98);
+              aiPad.x = wallX;
+              aiPad.y = clamp(ball.y - aiPad.h / 2, 0, H - aiPad.h);
+            }
           }
 
           goalPause = 2.0;  // longer pause for foul + card display
