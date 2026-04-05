@@ -1305,9 +1305,10 @@
         const goalLineL = W * GOAL_LINE_RATIO;
         const goalLineR = W * (1 - GOAL_LINE_RATIO);
 
-        // Goal scoring (skip if ball is held or airborne — lobs fly over the goal)
+        // Goal scoring — must be grounded (z < 5), moving toward goal, and in the mouth
         if (ballState === 'held_player' || ballState === 'held_ai') break;
-        if (!airborne && ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
+        const grounded = ball.z < 5;
+        if (grounded && ball.vx < 0 && ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
           // Right team (AI) scored on left goal
           const scorerId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
           scoreR++;
@@ -1325,7 +1326,7 @@
           resetAfterGoal(true);
           return;
         }
-        if (!airborne && ball.x + ball.size / 2 > goalLineR && ball.y > gt && ball.y < gb) {
+        if (grounded && ball.vx > 0 && ball.x + ball.size / 2 > goalLineR && ball.y > gt && ball.y < gb) {
           // Left team (player) scored on right goal
           const scorerId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
           scoreL++;
@@ -1345,8 +1346,9 @@
           return;
         }
 
-        // Wall bounce outside goal mouth
-        if (ball.y <= gt || ball.y >= gb || airborne) {
+        // Wall bounce outside goal mouth (or airborne, or not fully grounded)
+        const canScore = grounded && ball.y > gt && ball.y < gb;
+        if (!canScore) {
           if (ball.x - ball.size / 2 < goalLineL) {
             ball.x = goalLineL + ball.size / 2;
             ball.vx = Math.abs(ball.vx) * 0.7;
