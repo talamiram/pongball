@@ -1305,9 +1305,9 @@
         const goalLineL = W * GOAL_LINE_RATIO;
         const goalLineR = W * (1 - GOAL_LINE_RATIO);
 
-        // Goal scoring (skip if ball is held — prevents double-goal after reset)
+        // Goal scoring (skip if ball is held or airborne — lobs fly over the goal)
         if (ballState === 'held_player' || ballState === 'held_ai') break;
-        if (ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
+        if (!airborne && ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
           // Right team (AI) scored on left goal
           const scorerId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
           scoreR++;
@@ -1325,7 +1325,7 @@
           resetAfterGoal(true);
           return;
         }
-        if (ball.x + ball.size / 2 > goalLineR && ball.y > gt && ball.y < gb) {
+        if (!airborne && ball.x + ball.size / 2 > goalLineR && ball.y > gt && ball.y < gb) {
           // Left team (player) scored on right goal
           const scorerId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
           scoreL++;
