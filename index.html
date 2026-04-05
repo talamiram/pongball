@@ -580,6 +580,7 @@
       inInjuryTime = false;
       possessionLeft = 0; possessionRight = 0;
       foulState = null; foulCooldown = 0;
+      cardBook = {}; redCardsLeft = 0; redCardsRight = 0;
       lastShotChargeTime = 0; lastShotMaxZ = 0; currentMaxZ = 0;
       resetAfterGoal(true);
       goalPause = 0;
@@ -757,8 +758,12 @@
     let paddleBounce = {};  // keyed by paddle ref, { timer, intensity }
 
     // Foul / free kick state
-    let foulState = null;  // null | { x, y, team: 'left'|'right', timer, isPenalty }
+    let foulState = null;  // null | { x, y, team, timer, isPenalty, message, cardType }
     let foulCooldown = 0;  // prevent rapid fouls
+    // Card tracking: { playerName: { warnings: 0, yellows: 0, red: false } }
+    let cardBook = {};
+    let redCardsLeft = 0;   // count of red cards → speed = (11-n)/11
+    let redCardsRight = 0;
 
     let playerVelY = 0;
     let playerPrevY = 0;
@@ -989,6 +994,8 @@
       injuryTime = 1 + Math.floor(Math.random() * 5);  // 1-5 injury time minutes
       inInjuryTime = false;
       possessionLeft = 0; possessionRight = 0;
+      foulState = null; foulCooldown = 0;
+      cardBook = {}; redCardsLeft = 0; redCardsRight = 0;
       lastShotChargeTime = 0; lastShotMaxZ = 0; currentMaxZ = 0;
       resetAfterGoal(true);  // left team (conceding side) starts with ball
       goalPause = 0;  // no pause at kickoff (resetAfterGoal sets 0.8s pause for goals)
@@ -1072,19 +1079,22 @@
         return;
       }
 
-      // All other zones: LOB — hold Space longer = higher lob
+      // All other zones: LOB — hold Space longer = higher but slower lob
       let aimY = 0;
       if (paddle.isPlayer) {
-        if (keys['ArrowUp'])   aimY = -0.6;
-        if (keys['ArrowDown']) aimY =  0.6;
+        if (keys['ArrowUp'])   aimY = -0.5;
+        if (keys['ArrowDown']) aimY =  0.5;
       } else {
-        aimY = (Math.random() - 0.5) * 0.5;
+        aimY = (Math.random() - 0.5) * 0.4;
       }
 
-      const speed = W * BALL_SPEED;
+      const lobCharge = Math.max(charge, 0.35);
+      // Higher lob = less horizontal speed (energy tradeoff)
+      const lobFactor = Math.max(0.3, 1 - lobCharge * 0.45);
+      const speed = W * BALL_SPEED * lobFactor;
       ball.vx = Math.cos(aimY) * speed * dir;
       ball.vy = Math.sin(aimY) * speed;
-      ball.vz = Math.max(charge, 0.35) * H * LOB_POWER;
+      ball.vz = lobCharge * H * LOB_POWER;
       ball.curve = 0;
 
       ball.z = 0;
@@ -1097,7 +1107,8 @@
     function aiPaddle(paddle, dt) {
       if (!ball || ballState === 'held_ai') return;  // AI handles held state in update()
 
-      const speed = H * PADDLE_SPEED_RATIO * AI_SKILL;
+      let speed = H * PADDLE_SPEED_RATIO * AI_SKILL;
+      if (redCardsRight > 0) speed *= (11 - redCardsRight) / 11;  // down a man
       const cy = paddle.y + paddle.h / 2;
       const cx = paddle.x + paddle.w / 2;
 
@@ -1251,6 +1262,9 @@
               playLandingThud(landingImpact);
             }
             ball.z = 0; ball.vz = 0;
+            // Landing friction — ball slows down on contact with surface
+            ball.vx *= 0.80;
+            ball.vy *= 0.80;
           }
           if (ball.z > currentMaxZ) currentMaxZ = ball.z;
         }
@@ -1414,7 +1428,8 @@
       if (playerPaddle) {
         const px = playerPaddle.x + playerPaddle.w / 2;
         const inEnemyHalf = px > W * 0.5;
-        const speedMult = inEnemyHalf ? 0.65 : 1.0;  // slower in enemy half
+        let speedMult = inEnemyHalf ? 0.65 : 1.0;  // slower in enemy half
+        if (redCardsLeft > 0) speedMult *= (11 - redCardsLeft) / 11;  // down a man
         if (keys['ArrowUp'])    playerPaddle.y -= pSpeed * speedMult * dt;
         if (keys['ArrowDown'])  playerPaddle.y += pSpeed * speedMult * dt;
         if (keys['ArrowLeft'])  playerPaddle.x -= pSpeed * speedMult * dt;
@@ -1454,37 +1469,91 @@
       // Foul cooldown
       if (foulCooldown > 0) foulCooldown -= dt;
 
-      // ── Paddle-to-paddle collision → foul ──
+      // ── Paddle-to-paddle collision → foul (aggressor = moving toward opponent) ──
       if (playerPaddle && aiPad && ballState === 'live' && foulCooldown <= 0 && !foulState) {
         const overlap = playerPaddle.x + playerPaddle.w > aiPad.x &&
                         playerPaddle.x < aiPad.x + aiPad.w &&
                         playerPaddle.y + playerPaddle.h > aiPad.y &&
                         playerPaddle.y < aiPad.y + aiPad.h;
         if (overlap) {
-          // Determine who fouled: the one in the other's half
-          const playerInEnemyHalf = (playerPaddle.x + playerPaddle.w / 2) > W * 0.5;
-          const aiInEnemyHalf = (aiPad.x + aiPad.w / 2) < W * 0.5;
           const foulX = (playerPaddle.x + aiPad.x) / 2 + playerPaddle.w / 2;
           const foulY = (playerPaddle.y + aiPad.y) / 2 + playerPaddle.h / 2;
-          // Fouling team is whoever is deeper in enemy territory
-          const foulingTeam = playerInEnemyHalf ? 'left' : 'right';
-          const isPenalty = (foulingTeam === 'left' && foulX > W * 0.95) ||
-                            (foulingTeam === 'right' && foulX < W * 0.05);
 
-          foulState = { x: foulX, y: foulY, team: foulingTeam, timer: 2.0, isPenalty };
-          foulCooldown = 4.0;  // no fouls for 4 seconds
+          // Aggressor = the paddle moving TOWARD the other one (head-on)
+          const playerCx = playerPaddle.x + playerPaddle.w / 2;
+          const aiCx = aiPad.x + aiPad.w / 2;
+          const playerMovingRight = keys['ArrowRight'];
+          const playerMovingLeft = keys['ArrowLeft'];
+          const playerMovingTowardAI = playerCx < aiCx ? playerMovingRight : playerMovingLeft;
+          // AI is always somewhat moving toward ball, so check if player is charging
+          const playerInEnemyHalf = playerCx > W * 0.5;
+          const aiInEnemyHalf = aiCx < W * 0.5;
 
-          // Place ball at foul spot for free kick (awarded to other team)
+          // Determine fouler: player is aggressor if actively moving toward AI,
+          // otherwise AI fouled (if AI pushed into player's half)
+          let foulingTeam;
+          if (playerMovingTowardAI && playerInEnemyHalf) {
+            foulingTeam = 'left';  // player fouled
+          } else if (aiInEnemyHalf) {
+            foulingTeam = 'right'; // AI fouled
+          } else if (playerMovingTowardAI) {
+            foulingTeam = 'left';
+          } else {
+            foulingTeam = 'right';
+          }
+
+          let isPenalty = (foulingTeam === 'left' && foulX > W * 0.90) ||
+                            (foulingTeam === 'right' && foulX < W * 0.10);
+
+          // Get fouling player's identity
+          const foulingPaddle = foulingTeam === 'left' ? playerPaddle : aiPad;
+          const foulingData = foulingTeam === 'left' ? activeLeftData : activeRightData;
+          const foulingId = getZoneIdentity(foulingPaddle, foulingData);
+          const foulerName = foulingId.player.name.toUpperCase();
+
+          // Card escalation: warning → yellow → red
+          if (!cardBook[foulerName]) cardBook[foulerName] = { warnings: 0, yellows: 0, red: false, team: foulingTeam };
+          const record = cardBook[foulerName];
+
+          let cardType, message;
+          if (record.red) {
+            // Already sent off — this is a different player in that zone now
+            // Still a foul, just a warning for the new player identity
+            cardType = 'warning';
+            message = `${foulerName} — WARNED BY REFEREE`;
+          } else if (record.yellows >= 1) {
+            // Second yellow = red card! Always a penalty.
+            record.yellows = 2;
+            record.red = true;
+            cardType = 'red';
+            isPenalty = true;  // red card = penalty kick
+            message = `${foulerName} — RED CARD! SENT OFF!`;
+            if (foulingTeam === 'left') redCardsLeft++;
+            else redCardsRight++;
+          } else if (record.warnings >= 1) {
+            // Escalate to yellow card
+            record.yellows = 1;
+            cardType = 'yellow';
+            message = `${foulerName} — YELLOW CARD`;
+          } else {
+            // First offense: warning
+            record.warnings = 1;
+            cardType = 'warning';
+            message = `${foulerName} — WARNED BY REFEREE`;
+          }
+
+          foulState = { x: foulX, y: foulY, team: foulingTeam, timer: 3.0, isPenalty, message, cardType };
+          foulCooldown = 8.0;  // 8 seconds between fouls
+
+          // Place ball at foul spot for free kick (awarded to fouled team)
           ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.curve = 0;
           if (foulingTeam === 'left') {
-            // Free kick for right team (AI)
             ball.x = isPenalty ? W * 0.12 : foulX;
             ball.y = isPenalty ? H * 0.5 : foulY;
             ballState = 'held_ai';
             holdPaddle = aiPad;
             aiHoldTimer = 0.8 + Math.random() * 0.6;
           } else {
-            // Free kick for left team (player)
             ball.x = isPenalty ? W * 0.88 : foulX;
             ball.y = isPenalty ? H * 0.5 : foulY;
             ballState = 'held_player';
@@ -1493,7 +1562,7 @@
           holdTimer = 0;
           stickBallToFront(holdPaddle);
 
-          // Push paddles apart
+          // Push paddles apart (back to own halves)
           if (playerInEnemyHalf) {
             playerPaddle.x = Math.min(playerPaddle.x, W * 0.48 - playerPaddle.w);
           }
@@ -1501,7 +1570,7 @@
             aiPad.x = Math.max(aiPad.x, W * 0.52);
           }
 
-          goalPause = 1.5;  // brief pause for the foul
+          goalPause = 2.0;  // longer pause for foul + card display
           playWhistle();
         }
       }
@@ -1982,6 +2051,81 @@
       });
     }
 
+    // ─── SHARED FOUL OVERLAY ───
+    function drawFoulOverlay(fx, fy) {
+      if (!foulState) return;
+      const alpha = Math.min(foulState.timer, 1);
+      const ct = foulState.cardType;
+      const isRed = ct === 'red';
+      const isYellow = ct === 'yellow';
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Dark backdrop for readability
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(fx - W * 0.22, fy - H * 0.12, W * 0.44, H * 0.18);
+
+      // "FOUL!" or "PENALTY!" header
+      const hdrSize = Math.max(28, W * 0.028);
+      ctx.font = `bold ${hdrSize}px monospace`;
+      const headerColor = isRed ? '#f44' : '#ff0';
+      ctx.shadowColor = headerColor;
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = headerColor;
+      ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', fx, fy - H * 0.055);
+      // Double glow pass
+      ctx.shadowBlur = 40;
+      ctx.globalAlpha = alpha * 0.4;
+      ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', fx, fy - H * 0.055);
+      ctx.globalAlpha = alpha;
+
+      // Card visual (rectangle) — centered between header and message
+      if (isYellow || isRed) {
+        const cardW = 16, cardH = 22;
+        const cardX = fx + W * 0.14;
+        const cardY = fy - H * 0.055 - cardH / 2;
+        ctx.fillStyle = isRed ? '#f22' : '#ff0';
+        ctx.shadowColor = isRed ? '#f22' : '#ff0';
+        ctx.shadowBlur = 15;
+        ctx.fillRect(cardX, cardY, cardW, cardH);
+        // Card outline
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 0;
+        ctx.strokeRect(cardX, cardY, cardW, cardH);
+      }
+
+      // Message line: "SCHILLACI — YELLOW CARD" etc.
+      if (foulState.message) {
+        const msgSize = Math.max(14, W * 0.014);
+        ctx.font = `bold ${msgSize}px monospace`;
+        ctx.shadowBlur = 10;
+        if (isRed) {
+          ctx.fillStyle = '#f66';
+          ctx.shadowColor = '#f44';
+        } else if (isYellow) {
+          ctx.fillStyle = '#ff8';
+          ctx.shadowColor = '#ff0';
+        } else {
+          ctx.fillStyle = '#fff';
+          ctx.shadowColor = '#fff';
+        }
+        ctx.fillText(foulState.message, fx, fy + H * 0.01);
+      }
+
+      // "FREE KICK" label below
+      const fkSize = Math.max(10, W * 0.01);
+      ctx.font = `${fkSize}px monospace`;
+      ctx.fillStyle = '#aaa';
+      ctx.shadowBlur = 0;
+      ctx.fillText('FREE KICK', fx, fy + H * 0.05);
+
+      ctx.restore();
+    }
+
     // ═══════════════════════════════
     //  RENDER (match or physics)
     function render() {
@@ -1997,20 +2141,7 @@
       }
 
       // ─── Foul indicator (2D) ───
-      if (foulState) {
-        const alpha = Math.min(foulState.timer, 1);
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 24px monospace';
-        ctx.shadowColor = '#ff0';
-        ctx.shadowBlur = 15;
-        ctx.fillStyle = '#ff0';
-        ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', foulState.x, foulState.y - 30);
-        const cardW = 14, cardH = 18;
-        ctx.fillRect(foulState.x - cardW / 2, foulState.y - 55, cardW, cardH);
-        ctx.restore();
-      }
+      if (foulState) drawFoulOverlay(foulState.x, foulState.y);
 
       // ─── Goal celebration overlay (2D) ───
       if (goalCelebration) {
@@ -3365,21 +3496,7 @@
       // ─── Foul indicator ───
       if (foulState) {
         const fp = project3D(foulState.x, foulState.y, 0);
-        const alpha = Math.min(foulState.timer, 1);
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 20px monospace';
-        ctx.shadowColor = '#ff0';
-        ctx.shadowBlur = 15;
-        ctx.fillStyle = '#ff0';
-        ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', fp.x, fp.y - 30 * fp.scale);
-        // Yellow card flash
-        const cardW = 12 * fp.scale, cardH = 16 * fp.scale;
-        ctx.fillStyle = '#ff0';
-        ctx.shadowBlur = 10;
-        ctx.fillRect(fp.x - cardW / 2, fp.y - 55 * fp.scale, cardW, cardH);
-        ctx.restore();
+        drawFoulOverlay(fp.x, fp.y);
       }
 
       // ─── Goal celebration overlay ───
@@ -3674,20 +3791,7 @@
       drawHUD();
 
       // Foul indicator (in game coordinates)
-      if (foulState) {
-        const alpha = Math.min(foulState.timer, 1);
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 24px monospace';
-        ctx.shadowColor = '#ff0';
-        ctx.shadowBlur = 15;
-        ctx.fillStyle = '#ff0';
-        ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', foulState.x, foulState.y - 30);
-        const cardW = 14, cardH = 18;
-        ctx.fillRect(foulState.x - cardW / 2, foulState.y - 55, cardW, cardH);
-        ctx.restore();
-      }
+      if (foulState) drawFoulOverlay(foulState.x, foulState.y);
 
       // Goal celebration (in game coordinates)
       if (goalCelebration) {
