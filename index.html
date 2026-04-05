@@ -166,20 +166,34 @@
     }
 
     // Ball hit sound (short percussive click)
-    function playHitSound() {
+    function playKickSound(intensity) {
       const ac = ensureAudio();
       const t = ac.currentTime;
+      const vol = 0.10 + 0.08 * (intensity || 0.5);
+      // Deep kick thump
       const osc = ac.createOscillator();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(800, t);
-      osc.frequency.exponentialRampToValueAtTime(200, t + 0.08);
+      osc.frequency.setValueAtTime(180, t);
+      osc.frequency.exponentialRampToValueAtTime(50, t + 0.12);
       const g = ac.createGain();
-      g.gain.setValueAtTime(0.15, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
       osc.connect(g);
       g.connect(ac.destination);
       osc.start(t);
-      osc.stop(t + 0.1);
+      osc.stop(t + 0.15);
+      // Snappy attack click
+      const osc2 = ac.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(600, t);
+      osc2.frequency.exponentialRampToValueAtTime(150, t + 0.04);
+      const g2 = ac.createGain();
+      g2.gain.setValueAtTime(vol * 0.6, t);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      osc2.connect(g2);
+      g2.connect(ac.destination);
+      osc2.start(t);
+      osc2.stop(t + 0.05);
     }
 
     // Lob landing thud (deep satisfying impact)
@@ -230,6 +244,25 @@
       osc.stop(t + 0.08);
     }
 
+    function playWhistle() {
+      const ac = ensureAudio();
+      const t = ac.currentTime;
+      // High-pitched whistle
+      const osc = ac.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(2800, t);
+      osc.frequency.setValueAtTime(3200, t + 0.1);
+      osc.frequency.setValueAtTime(2800, t + 0.25);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.08, t);
+      g.gain.setValueAtTime(0.10, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      osc.connect(g);
+      g.connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.35);
+    }
+
     let W, H;
     let leftTeam = null, rightTeam = null;
     function resize() {
@@ -246,7 +279,7 @@
     //  GAME MODE: 'menu' | 'match' | 'physics'
     // ═══════════════════════════════════════════
     let gameMode = 'menu';
-    let menuSelection = 0;  // 0 = match, 1 = match3d, 2 = physics, 3 = worldcup
+    let menuSelection = 0;  // 0=physics, 1=coffeetable, 2=match3d, 3=match, 4=worldcup
 
     // ─── TEAMS: ITALIA 90 ───
     // Player = Italy (left), AI = W.Germany (right)
@@ -297,28 +330,387 @@
       ]
     };
 
+    // ─── WORLD CUP ITALIA '90 — ALL 24 TEAMS ───
+    function makeTeam(name, short, primary, secondary, gk, def4, mid4, fwd2) {
+      const s = (sp, re, sz) => ({ speed: sp, reaction: re, size: sz || 1.0 });
+      return {
+        name, short, primary, secondary,
+        kit: { head: '#fff', jersey: primary, shorts: secondary, boots: '#000' },
+        gk:  { num: 1, name: gk, stats: s(0.7, 0.75) },
+        def: def4.map((n, i) => ({ num: [2,4,5,3][i], name: n, stats: s(0.65 + Math.random()*0.2, 0.70 + Math.random()*0.15, 1.0 + Math.random()*0.1) })),
+        mid: mid4.map((n, i) => ({ num: [6,8,10,7][i], name: n, stats: s(0.70 + Math.random()*0.2, 0.70 + Math.random()*0.2, 0.9 + Math.random()*0.15) })),
+        fwd: fwd2.map((n, i) => ({ num: [9,11][i], name: n, stats: s(0.80 + Math.random()*0.15, 0.80 + Math.random()*0.15, 0.95) }))
+      };
+    }
+
+    const WC_TEAMS = {
+      // Group A
+      ITA: TEAM_LEFT,
+      AUT: makeTeam('Austria','AUT','#ed2939','#fff','Lindenberger',['Streiter','Aigner','Pecl','Pfeifer'],['Artner','Zsak','Herzog','Ogris'],['Polster','Rodax']),
+      USA: makeTeam('USA','USA','#002868','#fff','Meola',['Armstrong','Windischmann','Doyle','Banks'],['Caligiuri','Harkes','Ramos','Murray'],['Vermes','Wynalda']),
+      CSK: makeTeam('Czechoslovakia','CSK','#11457e','#fff','Stejskal',['Hasek','Kadlec','Kocian','Straka'],['Moravcik','Chovanec','Bilek','Kubik'],['Skuhravy','Knoflicek']),
+      // Group B
+      ARG: makeTeam('Argentina','ARG','#75AADB','#fff','Goycochea',['Simón','Serrizuela','Ruggeri','Olarticoechea'],['Lorenzo','Basualdo','Burruchaga','Troglio'],['Maradona','Caniggia']),
+      CMR: makeTeam('Cameroon','CMR','#007a3d','#ce1126','N\'Kono',['Tataw','Massing','Ebwellé','N\'Dip'],['M\'Buh','Kunde','Makanaky','Pagal'],['Millá','Omam-Biyik']),
+      ROM: makeTeam('Romania','ROM','#fcd116','#002b7f','Lung',['Rednic','Andone','Popescu','Klein'],['Rotariu','Sabau','Hagi','Lupescu'],['Lacatus','Raducioiu']),
+      URS: makeTeam('Soviet Union','URS','#cc0000','#fff','Dasaev',['Khidiatullin','Kuznetsov','Gorlukovich','Rats'],['Aleinikov','Bessonov','Litovchenko','Zavarov'],['Protasov','Dobrovolski']),
+      // Group C
+      BRA: makeTeam('Brazil','BRA','#ffdf00','#009739','Taffarel',['Jorginho','Aldair','Ricardo Gomes','Branco'],['Dunga','Alemão','Valdo','Silas'],['Careca','Müller']),
+      CRC: makeTeam('Costa Rica','CRC','#ce1126','#002b7f','Conejo',['Flores','Montero','González','Marchena'],['Chaves','Gómez','Cayasso','Myers'],['Jara','Medford']),
+      SCO: makeTeam('Scotland','SCO','#003DA5','#fff','Leighton',['Gough','McLeish','McPherson','Malpas'],['Aitken','McStay','McLeod','McCall'],['Johnston','McCoist']),
+      SWE: makeTeam('Sweden','SWE','#006aa7','#fecc02','Ravelli',['R.Nilsson','Hysen','P.Larsson','Schwarz'],['Thern','Ingesson','Limpar','Strömberg'],['Brolin','Ekström']),
+      // Group D
+      GER: TEAM_RIGHT,
+      YUG: makeTeam('Yugoslavia','YUG','#003DA5','#fff','Ivkovic',['Stanojkovic','Spasic','Hadzibegic','Jozic'],['Stojkovic','Susic','Prosinecki','Savicevic'],['Vujovic','Pancev']),
+      COL: makeTeam('Colombia','COL','#fcd116','#003DA5','Higuita',['Escobar','Perea','Gildardo','Herrera'],['Valderrama','Álvarez','Rincón','Asprilla'],['Iguarán','Redin']),
+      UAE: makeTeam('UAE','UAE','#fff','#009639','Faraj',['Abdulrahman','Mubarak','Al-Haddad','Sultan'],['Khalil','Hassan','Abdullah','Jumaa'],['Ali','Bilal']),
+      // Group E
+      ESP: makeTeam('Spain','ESP','#c60b1e','#ffc400','Zubizarreta',['Chendo','Andrinua','Sanchís','Jiménez'],['Michel','Roberto','Martín Vázquez','Villarroya'],['Butragueño','Julio Salinas']),
+      BEL: makeTeam('Belgium','BEL','#ed2939','#000','Preud\'homme',['Gerets','Demol','Clijsters','Grün'],['Scifo','Van der Elst','Versavel','Vervoort'],['Ceulemans','Degryse']),
+      KOR: makeTeam('South Korea','KOR','#cd2e3a','#003478','Choi In-young',['Chung Yong-hwan','Park Kyung-hoon','Yoon Deuk-yeo','Gu Sang-bum'],['Lee Young-jin','Noh Soo-jin','Byun Byung-joo','Kim Joo-sung'],['Hwang Sun-hong','Choi Soon-ho']),
+      URU: makeTeam('Uruguay','URU','#5cbfeb','#000','Álvez',['Gutiérrez','De León','Herrera','Domínguez'],['Perdomo','Alzamendi','Ostolaza','Francescoli'],['Sosa','Fonseca']),
+      // Group F
+      ENG: makeTeam('England','ENG','#fff','#003DA5','Shilton',['Stevens','Walker','Butcher','Pearce'],['Waddle','Gascoigne','Robson','Platt'],['Lineker','Beardsley']),
+      IRE: makeTeam('Rep. Ireland','IRE','#009A49','#fff','Bonner',['Morris','McCarthy','Moran','Staunton'],['Houghton','Townsend','Whelan','Sheedy'],['Aldridge','Cascarino']),
+      NED: makeTeam('Netherlands','NED','#ff6600','#fff','Van Breukelen',['Van Aerle','Rijkaard','Koeman','Van Tiggelen'],['Wouters','Witschge','Vanenburg','Winter'],['Gullit','Van Basten']),
+      EGY: makeTeam('Egypt','EGY','#ce1126','#fff','Shobeir',['Hassan','Yassine','Hani','Ramzy'],['Abdelghani','Youssef','Tolba','Abdelhamid'],['Hassan Shehata','Abdelrazek'])
+    };
+
+    // Italia '90 Groups
+    const WC_GROUPS = {
+      A: ['ITA','AUT','USA','CSK'],
+      B: ['ARG','CMR','ROM','URS'],
+      C: ['BRA','CRC','SCO','SWE'],
+      D: ['GER','YUG','COL','UAE'],
+      E: ['ESP','BEL','KOR','URU'],
+      F: ['ENG','IRE','NED','EGY']
+    };
+
+    // World Cup tournament state
+    let wcState = null;  // { phase, groups, bracket, currentMatch, results }
+
+    function initWorldCup() {
+      wcState = {
+        phase: 'group_show',  // group_show → group_play → r16_show → r16_play → qf_show → qf_play → sf_show → sf_play → final_show → final_play → champion
+        groupStandings: {},
+        groupMatches: {},
+        groupMatchIndex: {},  // which match we're on per group
+        bracket: {},  // r16, qf, sf, final results
+        currentMatch: null,
+        playerTeam: 'ITA',
+        schedule: [],
+        scheduleIndex: 0
+      };
+
+      // Build group standings
+      for (const [g, teams] of Object.entries(WC_GROUPS)) {
+        wcState.groupStandings[g] = teams.map(t => ({ team: t, pts: 0, gf: 0, ga: 0, gd: 0, w: 0, d: 0, l: 0 }));
+        // 6 matches per group (each team plays other 3)
+        const matches = [];
+        for (let i = 0; i < teams.length; i++) {
+          for (let j = i + 1; j < teams.length; j++) {
+            matches.push({ home: teams[i], away: teams[j], scoreH: null, scoreA: null, played: false });
+          }
+        }
+        wcState.groupMatches[g] = matches;
+        wcState.groupMatchIndex[g] = 0;
+      }
+
+      // Build schedule: all group matches, player's matches first per round
+      buildGroupSchedule();
+    }
+
+    function buildGroupSchedule() {
+      // Schedule all group matches — player team matches are playable, rest are simulated
+      wcState.schedule = [];
+      const allMatches = [];
+      for (const [g, matches] of Object.entries(wcState.groupMatches)) {
+        matches.forEach((m, i) => allMatches.push({ group: g, matchIdx: i, ...m }));
+      }
+      // Sort: player matches first, then others
+      allMatches.sort((a, b) => {
+        const aPlayer = a.home === 'ITA' || a.away === 'ITA';
+        const bPlayer = b.home === 'ITA' || b.away === 'ITA';
+        if (aPlayer && !bPlayer) return -1;
+        if (!aPlayer && bPlayer) return 1;
+        return 0;
+      });
+      wcState.schedule = allMatches;
+      wcState.scheduleIndex = 0;
+    }
+
+    function wcNextMatch() {
+      while (wcState.scheduleIndex < wcState.schedule.length) {
+        const m = wcState.schedule[wcState.scheduleIndex];
+        if (!m.played) return m;
+        wcState.scheduleIndex++;
+      }
+      return null;
+    }
+
+    function wcSimMatch(home, away) {
+      // Simple simulation based on team quality
+      const hTeam = WC_TEAMS[home], aTeam = WC_TEAMS[away];
+      const hStr = hTeam ? (hTeam.fwd[0].stats.speed + hTeam.mid[0].stats.reaction) : 1.4;
+      const aStr = aTeam ? (aTeam.fwd[0].stats.speed + aTeam.mid[0].stats.reaction) : 1.4;
+      const hGoals = Math.floor(Math.random() * 3 * (hStr / (hStr + aStr)) + Math.random());
+      const aGoals = Math.floor(Math.random() * 3 * (aStr / (hStr + aStr)) + Math.random());
+      return { scoreH: hGoals, scoreA: aGoals };
+    }
+
+    function wcUpdateStandings(group, home, away, scoreH, scoreA) {
+      const standings = wcState.groupStandings[group];
+      const h = standings.find(s => s.team === home);
+      const a = standings.find(s => s.team === away);
+      h.gf += scoreH; h.ga += scoreA; h.gd = h.gf - h.ga;
+      a.gf += scoreA; a.ga += scoreH; a.gd = a.gf - a.ga;
+      if (scoreH > scoreA) { h.pts += 3; h.w++; a.l++; }
+      else if (scoreA > scoreH) { a.pts += 3; a.w++; h.l++; }
+      else { h.pts += 1; a.pts += 1; h.d++; a.d++; }
+      // Sort standings
+      standings.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf);
+    }
+
+    function wcSimRemainingGroupMatches() {
+      for (const [g, matches] of Object.entries(wcState.groupMatches)) {
+        matches.forEach(m => {
+          if (!m.played) {
+            const result = wcSimMatch(m.home, m.away);
+            m.scoreH = result.scoreH;
+            m.scoreA = result.scoreA;
+            m.played = true;
+            wcUpdateStandings(g, m.home, m.away, m.scoreH, m.scoreA);
+          }
+        });
+      }
+    }
+
+    function wcGetGroupWinners() {
+      // Top 2 from each group + 4 best 3rd-place teams
+      const qualified = [];
+      const thirdPlace = [];
+      for (const [g, standings] of Object.entries(wcState.groupStandings)) {
+        qualified.push(standings[0].team, standings[1].team);
+        thirdPlace.push({ ...standings[2], group: g });
+      }
+      // Best 4 third-place teams
+      thirdPlace.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf);
+      for (let i = 0; i < 4; i++) qualified.push(thirdPlace[i].team);
+      return qualified;
+    }
+
+    function wcBuildBracket() {
+      // Italia '90 Round of 16 bracket (simplified — actual FIFA bracket rules)
+      const q = wcGetGroupWinners();
+      const gs = wcState.groupStandings;
+      // R16 matchups: 1A v 3C/D/E, 2A v 2C, 1B v 3A/C/F, 2B v 2D, 1C v 3A/B/F, 2C v 2A... etc
+      // Simplified: group winners vs third-place, runners-up vs runners-up from other groups
+      const w = (g) => gs[g][0].team;  // winner
+      const r = (g) => gs[g][1].team;  // runner-up
+      const t = (g) => gs[g][2].team;  // third
+
+      // Approximate Italia '90 R16 bracket
+      wcState.bracket = {
+        r16: [
+          { home: w('A'), away: t('C'), scoreH: null, scoreA: null, played: false },  // 1
+          { home: r('B'), away: r('C'), scoreH: null, scoreA: null, played: false },  // 2
+          { home: w('D'), away: t('B'), scoreH: null, scoreA: null, played: false },  // 3
+          { home: r('A'), away: r('D'), scoreH: null, scoreA: null, played: false },  // 4
+          { home: w('C'), away: t('A'), scoreH: null, scoreA: null, played: false },  // 5
+          { home: r('F'), away: r('E'), scoreH: null, scoreA: null, played: false },  // 6
+          { home: w('B'), away: t('F'), scoreH: null, scoreA: null, played: false },  // 7
+          { home: w('E'), away: w('F'), scoreH: null, scoreA: null, played: false },  // 8
+        ],
+        qf: [], sf: [], final: []
+      };
+    }
+
+    function wcMatchWinner(m) {
+      if (m.scoreH > m.scoreA) return m.home;
+      if (m.scoreA > m.scoreH) return m.away;
+      // Penalty shootout (random for simulated)
+      return Math.random() < 0.5 ? m.home : m.away;
+    }
+
+    function wcAdvanceBracket(round) {
+      const matches = wcState.bracket[round];
+      const nextRound = round === 'r16' ? 'qf' : round === 'qf' ? 'sf' : 'final';
+      wcState.bracket[nextRound] = [];
+      for (let i = 0; i < matches.length; i += 2) {
+        const w1 = wcMatchWinner(matches[i]);
+        const w2 = wcMatchWinner(matches[i + 1]);
+        wcState.bracket[nextRound].push({ home: w1, away: w2, scoreH: null, scoreA: null, played: false });
+      }
+    }
+
+    function wcIsPlayerMatch(m) {
+      return m.home === 'ITA' || m.away === 'ITA';
+    }
+
+    function wcStartPlayableMatch(m) {
+      // Set up a real game with the opponent
+      const opponent = m.home === 'ITA' ? m.away : m.home;
+      const oppTeam = WC_TEAMS[opponent];
+      const playerIsLeft = m.home === 'ITA';
+
+      // Set active teams
+      if (playerIsLeft) {
+        activeLeftData = WC_TEAMS.ITA;
+        activeRightData = oppTeam;
+        leftTeam = buildTeam(WC_TEAMS.ITA, true, false);
+        rightTeam = buildTeam(oppTeam, false, false);
+      } else {
+        activeLeftData = oppTeam;
+        activeRightData = WC_TEAMS.ITA;
+        leftTeam = buildTeam(oppTeam, true, false);
+        rightTeam = buildTeam(WC_TEAMS.ITA, false, false);
+      }
+      // Player always controls left
+      leftTeam.paddle.isPlayer = true;
+      leftTeam.paddle.isLeft = true;
+      rightTeam.paddle.isPlayer = false;
+      rightTeam.paddle.isLeft = false;
+
+      rebuildPaddleList();
+      ball = { x: 0, y: 0, vx: 0, vy: 0, z: 0, vz: 0, size: BALL_SIZE, curve: 0 };
+      ballTrail = [];
+      scoreL = 0; scoreR = 0;
+      matchTimer = MATCH_TIME; matchOver = false; goalLog = [];
+      injuryTime = 1 + Math.floor(Math.random() * 5);
+      inInjuryTime = false;
+      possessionLeft = 0; possessionRight = 0;
+      foulState = null; foulCooldown = 0;
+      lastShotChargeTime = 0; lastShotMaxZ = 0; currentMaxZ = 0;
+      resetAfterGoal(true);
+      goalPause = 0;
+      lastTime = performance.now();
+      goalCelebration = null;
+
+      wcState.currentMatch = m;
+      gameMode = 'wc_match';
+      cutsceneActive = false;
+    }
+
+    function wcFinishMatch() {
+      const m = wcState.currentMatch;
+      const playerIsLeft = m.home === 'ITA';
+      m.scoreH = playerIsLeft ? scoreL : scoreR;
+      m.scoreA = playerIsLeft ? scoreR : scoreL;
+      m.played = true;
+
+      // Update standings if group phase
+      if (wcState.phase === 'group_play') {
+        // Find which group this match is in
+        for (const [g, matches] of Object.entries(wcState.groupMatches)) {
+          const found = matches.find(gm => gm.home === m.home && gm.away === m.away);
+          if (found) {
+            found.scoreH = m.scoreH;
+            found.scoreA = m.scoreA;
+            found.played = true;
+            wcUpdateStandings(g, m.home, m.away, m.scoreH, m.scoreA);
+            break;
+          }
+        }
+      }
+
+      wcState.currentMatch = null;
+      gameMode = 'worldcup';
+
+      // Advance tournament
+      wcAdvanceTournament();
+    }
+
+    function wcAdvanceTournament() {
+      if (wcState.phase === 'group_play') {
+        // Check if player has more group matches
+        const playerGroup = Object.entries(WC_GROUPS).find(([g, teams]) => teams.includes('ITA'))[0];
+        const remaining = wcState.groupMatches[playerGroup].filter(m => !m.played && wcIsPlayerMatch(m));
+        if (remaining.length > 0) return;  // more to play
+
+        // Sim remaining group matches
+        wcSimRemainingGroupMatches();
+        wcState.phase = 'group_done';
+
+        // Check if Italy qualified
+        const winners = wcGetGroupWinners();
+        if (!winners.includes('ITA')) {
+          wcState.phase = 'eliminated';
+          return;
+        }
+
+        // Build knockout bracket
+        wcBuildBracket();
+        wcState.phase = 'r16_show';
+      } else if (wcState.phase === 'r16_play') {
+        // Sim non-player R16 matches
+        wcState.bracket.r16.forEach(m => {
+          if (!m.played) {
+            const r = wcSimMatch(m.home, m.away);
+            m.scoreH = r.scoreH; m.scoreA = r.scoreA; m.played = true;
+          }
+        });
+        if (!wcState.bracket.r16.find(m => wcMatchWinner(m) === 'ITA')) {
+          wcState.phase = 'eliminated'; return;
+        }
+        wcAdvanceBracket('r16');
+        wcState.phase = 'qf_show';
+      } else if (wcState.phase === 'qf_play') {
+        wcState.bracket.qf.forEach(m => {
+          if (!m.played) {
+            const r = wcSimMatch(m.home, m.away);
+            m.scoreH = r.scoreH; m.scoreA = r.scoreA; m.played = true;
+          }
+        });
+        if (!wcState.bracket.qf.find(m => wcMatchWinner(m) === 'ITA')) {
+          wcState.phase = 'eliminated'; return;
+        }
+        wcAdvanceBracket('qf');
+        wcState.phase = 'sf_show';
+      } else if (wcState.phase === 'sf_play') {
+        wcState.bracket.sf.forEach(m => {
+          if (!m.played) {
+            const r = wcSimMatch(m.home, m.away);
+            m.scoreH = r.scoreH; m.scoreA = r.scoreA; m.played = true;
+          }
+        });
+        if (!wcState.bracket.sf.find(m => wcMatchWinner(m) === 'ITA')) {
+          wcState.phase = 'eliminated'; return;
+        }
+        wcAdvanceBracket('sf');
+        wcState.phase = 'final_show';
+      } else if (wcState.phase === 'final_play') {
+        const finalMatch = wcState.bracket.final[0];
+        if (wcMatchWinner(finalMatch) === 'ITA') {
+          wcState.phase = 'champion';
+        } else {
+          wcState.phase = 'eliminated';
+        }
+      }
+    }
+
     // ─── CONSTANTS ───
     const PADDLE_W = 12;
-    const PADDLE_H_RATIO = 0.08;
+    const PADDLE_H_RATIO = 0.09;
     const BALL_SIZE = 12;
     const GOAL_LINE_RATIO = 0.02;
 
-    const BALL_SPEED = 0.30;
-    const BALL_MAX_SPEED = 0.60;
-    const BALL_ACCEL = 1.03;
-    const SPEED_3D = 1.45;  // 3D field is visually smaller, so speed up to compensate
+    const BALL_SPEED = 0.20;
+    const BALL_MAX_SPEED = 0.40;
+    const BALL_ACCEL = 1.02;
+    const SPEED_3D = 1.30;  // 3D field is visually smaller, so speed up to compensate
     const MAX_BOUNCE_ANGLE = Math.PI / 3;
     const HOLD_TIME_LIMIT = 2.0;
 
-    const GRAVITY = 500;
-    const LOB_POWER = 1.2;
+    const GRAVITY = 350;
+    const LOB_POWER = 2.2;
     const AIR_THRESHOLD = 10;
 
-    const GOAL_HEIGHT_RATIO = 0.30;
+    const GOAL_HEIGHT_RATIO = 0.20;
     const POST_THICK = 6;
     const GOAL_DEPTH = 18;
 
-    const AI_SKILL = 0.70;
+    const MATCH_TIME = 90;  // 90-second match
+    const AI_SKILL = 0.80;
     const PADDLE_SPEED_RATIO = 0.50;
 
     // Zone x-boundaries (ratio of W, for left team — right is mirrored)
@@ -329,6 +721,15 @@
 
     // ─── STATE ───
     let scoreL = 0, scoreR = 0;
+    let matchTimer = MATCH_TIME;
+    let matchOver = false;
+    let injuryTime = 0;  // random 1-5 extra seconds/minutes
+    let inInjuryTime = false;
+    let goalLog = [];  // { side: 'left'|'right', scorer, num, time }
+    // Active team data (changes for WC matches)
+    let activeLeftData = TEAM_LEFT;
+    let activeRightData = TEAM_RIGHT;
+    let possessionLeft = 0, possessionRight = 0;  // time in seconds
     let _toScreen = (gx, gy) => ({ x: gx, y: gy });
     let _perspScale = (gy) => 1;
     let ball;
@@ -355,6 +756,10 @@
     // Paddle hit bounce (rubber feel)
     let paddleBounce = {};  // keyed by paddle ref, { timer, intensity }
 
+    // Foul / free kick state
+    let foulState = null;  // null | { x, y, team: 'left'|'right', timer, isPenalty }
+    let foulCooldown = 0;  // prevent rapid fouls
+
     let playerVelY = 0;
     let playerPrevY = 0;
 
@@ -374,7 +779,12 @@
     // Cutscene state
     let cutsceneActive = false;
     let cutsceneStartTime = 0;
-    const CUTSCENE_DURATION = 6.0;   // total seconds
+    const CUTSCENE_DURATION = 6.0;
+
+    // Coffee Table cutscene
+    let ctCutsceneActive = false;
+    let ctCutsceneStart = 0;
+    const CT_CUTSCENE_DUR = 4.5;  // total seconds   // total seconds
     const CUTSCENE_LOGO_END = 2.2;   // logo phase ends
     const CUTSCENE_TABLE_START = 1.8; // table fades in (overlaps logo end)
     const CUTSCENE_ZOOM_START = 3.0;  // zoom into gameplay begins
@@ -391,28 +801,79 @@
       // Menu input
       if (gameMode === 'menu') {
         if (e.code === 'ArrowUp') {
-          menuSelection = (menuSelection + 3) % 4;
+          menuSelection = (menuSelection + 4) % 5;
         }
         if (e.code === 'ArrowDown') {
-          menuSelection = (menuSelection + 1) % 4;
+          menuSelection = (menuSelection + 1) % 5;
         }
         if (e.code === 'Enter' || e.code === 'Space') {
-          startGame(['match', 'match3d', 'physics', 'worldcup'][menuSelection]);
+          startGame(['physics', 'coffeetable', 'match3d', 'match', 'worldcup'][menuSelection]);
         }
-        if (e.code === 'Digit1') startGame('match');
-        if (e.code === 'Digit2') startGame('match3d');
-        if (e.code === 'Digit3') startGame('physics');
-        if (e.code === 'Digit4') startGame('worldcup');
+        if (e.code === 'Digit1') startGame('physics');
+        if (e.code === 'Digit2') startGame('coffeetable');
+        if (e.code === 'Digit3') startGame('match3d');
+        if (e.code === 'Digit4') startGame('match');
+        if (e.code === 'Digit5') startGame('worldcup');
+      }
+      // World Cup navigation
+      if (gameMode === 'worldcup' && wcState && (e.code === 'Space' || e.code === 'Enter')) {
+        const p = wcState.phase;
+        if (p === 'group_show') {
+          wcState.phase = 'group_play';
+          // Find next player match
+          const playerGroup = Object.entries(WC_GROUPS).find(([g, teams]) => teams.includes('ITA'))[0];
+          const nextMatch = wcState.groupMatches[playerGroup].find(m => !m.played && wcIsPlayerMatch(m));
+          if (nextMatch) wcStartPlayableMatch(nextMatch);
+        } else if (p === 'group_play') {
+          // Find next player match in groups
+          const pg = Object.entries(WC_GROUPS).find(([g, teams]) => teams.includes('ITA'))[0];
+          const nm = wcState.groupMatches[pg].find(m => !m.played && wcIsPlayerMatch(m));
+          if (nm) { wcStartPlayableMatch(nm); }
+          else { wcState.phase = 'group_done'; wcAdvanceTournament(); }
+        } else if (p === 'group_done') {
+          wcAdvanceTournament();
+        } else if (p === 'r16_show') {
+          wcState.phase = 'r16_play';
+          const m = wcState.bracket.r16.find(m => !m.played && wcIsPlayerMatch(m));
+          if (m) wcStartPlayableMatch(m);
+        } else if (p === 'qf_show') {
+          wcState.phase = 'qf_play';
+          const m = wcState.bracket.qf.find(m => !m.played && wcIsPlayerMatch(m));
+          if (m) wcStartPlayableMatch(m);
+        } else if (p === 'sf_show') {
+          wcState.phase = 'sf_play';
+          const m = wcState.bracket.sf.find(m => !m.played && wcIsPlayerMatch(m));
+          if (m) wcStartPlayableMatch(m);
+        } else if (p === 'final_show') {
+          wcState.phase = 'final_play';
+          const m = wcState.bracket.final.find(m => !m.played && wcIsPlayerMatch(m));
+          if (m) wcStartPlayableMatch(m);
+        } else if (p === 'champion' || p === 'eliminated') {
+          startGame('worldcup');  // restart tournament
+        }
+        return;
+      }
+      // WC match game over → return to World Cup screen
+      if (gameMode === 'wc_match' && matchOver && e.code === 'Space') {
+        wcFinishMatch();
+        return;
+      }
+      // Rematch on Space when game over (non-WC)
+      if (matchOver && e.code === 'Space' && gameMode !== 'wc_match') {
+        startGame(gameMode);
+        return;
       }
       // Skip cutscene
-      if (cutsceneActive && (e.code === 'Space' || e.code === 'Enter')) {
+      if ((cutsceneActive || ctCutsceneActive) && (e.code === 'Space' || e.code === 'Enter')) {
         cutsceneActive = false;
+        ctCutsceneActive = false;
         lastTime = performance.now();
       }
       // ESC back to menu
       if (e.code === 'Escape' && gameMode !== 'menu') {
         gameMode = 'menu';
         cutsceneActive = false;
+        ctCutsceneActive = false;
         stopCrowd();
         goalCelebration = null;
       }
@@ -511,14 +972,23 @@
     // ─── INIT ───
     function startGame(mode) {
       gameMode = mode;
-      if (mode === 'worldcup') return;
+      if (mode === 'worldcup') {
+        initWorldCup();
+        return;
+      }
       const isPhysics = mode === 'physics';
-      leftTeam = buildTeam(TEAM_LEFT, true, isPhysics);
-      rightTeam = buildTeam(TEAM_RIGHT, false, isPhysics);
+      activeLeftData = TEAM_LEFT;
+      activeRightData = TEAM_RIGHT;
+      leftTeam = buildTeam(activeLeftData, true, isPhysics);
+      rightTeam = buildTeam(activeRightData, false, isPhysics);
       rebuildPaddleList();
       ball = { x: 0, y: 0, vx: 0, vy: 0, z: 0, vz: 0, size: BALL_SIZE, curve: 0 };
       ballTrail = [];
       scoreL = 0; scoreR = 0;
+      matchTimer = MATCH_TIME; matchOver = false; goalLog = [];
+      injuryTime = 1 + Math.floor(Math.random() * 5);  // 1-5 injury time minutes
+      inInjuryTime = false;
+      possessionLeft = 0; possessionRight = 0;
       lastShotChargeTime = 0; lastShotMaxZ = 0; currentMaxZ = 0;
       resetAfterGoal(true);  // left team (conceding side) starts with ball
       goalPause = 0;  // no pause at kickoff (resetAfterGoal sets 0.8s pause for goals)
@@ -529,6 +999,10 @@
       if (mode === 'match' || mode === 'match3d') {
         cutsceneActive = true;
         cutsceneStartTime = performance.now() / 1000;
+      } else if (mode === 'coffeetable') {
+        ctCutsceneActive = true;
+        ctCutsceneStart = performance.now() / 1000;
+        cutsceneActive = false;
       } else {
         cutsceneActive = false;
       }
@@ -598,7 +1072,7 @@
         return;
       }
 
-      // All other zones: immediate directed shot (no catch)
+      // All other zones: LOB — hold Space longer = higher lob
       let aimY = 0;
       if (paddle.isPlayer) {
         if (keys['ArrowUp'])   aimY = -0.6;
@@ -607,31 +1081,11 @@
         aimY = (Math.random() - 0.5) * 0.5;
       }
 
-      if (zone === 'def') {
-        // LOB CLEARANCE — high and long
-        const speed = W * BALL_SPEED;
-        ball.vx = Math.cos(aimY) * speed * dir;
-        ball.vy = Math.sin(aimY) * speed;
-        ball.vz = Math.max(charge, 0.2) * H * LOB_POWER;
-        ball.curve = 0;
-      } else if (zone === 'mid') {
-        // CURVING SHOT — ball curves in arrow direction
-        const speed = W * BALL_SPEED * 1.2;
-        ball.vx = Math.cos(aimY * 0.3) * speed * dir;
-        ball.vy = Math.sin(aimY * 0.3) * speed;
-        ball.vz = charge * H * LOB_POWER * 0.3;
-        // Curve: positive = curves down, negative = curves up
-        ball.curve = aimY * H * 1.5;  // strong lateral curve
-      } else if (zone === 'fwd') {
-        // POWER BLAST — fast rocket, charge = power, too much = over the bar
-        const power = Math.min(charge * 3, 2.0);  // sweet spot ~0.15-0.4s
-        const speed = W * BALL_SPEED * (1.0 + power * 0.8);
-        ball.vx = Math.cos(aimY * 0.5) * speed * dir;
-        ball.vy = Math.sin(aimY * 0.5) * speed;
-        // Too much charge = over the bar (high vz)
-        ball.vz = charge > 0.5 ? charge * H * LOB_POWER * 1.5 : charge * H * LOB_POWER * 0.2;
-        ball.curve = 0;
-      }
+      const speed = W * BALL_SPEED;
+      ball.vx = Math.cos(aimY) * speed * dir;
+      ball.vy = Math.sin(aimY) * speed;
+      ball.vz = Math.max(charge, 0.35) * H * LOB_POWER;
+      ball.curve = 0;
 
       ball.z = 0;
       lastShotChargeTime = charge;
@@ -662,24 +1116,31 @@
           targetX = W * 0.97;  // in the box
         }
       } else if (!ballInOurHalf) {
-        // ATTACK — push forward
-        targetX = W * 0.65;
+        // ATTACK — push forward into player's half
+        targetX = W * 0.40;  // cross into enemy territory
         targetY = ball.y;
       } else {
         // NEUTRAL — midfield positioning
-        targetX = W * 0.70;
+        targetX = W * 0.60;
         targetY = H * 0.5;
       }
 
-      // Move toward target
+      // Move toward target — slower in enemy half
+      const inEnemyHalf = cx < W * 0.5;
+      const aiSpeedMult = inEnemyHalf ? 0.65 : 1.0;
       const dx = targetX - cx;
       const dy = targetY - cy;
       const lag = 1 - AI_SKILL * 0.6;
-      paddle.x += dx * (1 - lag) * dt * 3;
-      paddle.y += dy * (1 - lag) * dt * 3;
+      paddle.x += dx * (1 - lag) * dt * 3 * aiSpeedMult;
+      paddle.y += dy * (1 - lag) * dt * 3 * aiSpeedMult;
+      // Magnetic pull back toward own half
+      if (inEnemyHalf) {
+        const overBy = (W * 0.5 - cx) / (W * 0.5);
+        paddle.x += overBy * speed * 0.3 * dt;
+      }
 
-      // Clamp to right half
-      paddle.x = clamp(paddle.x, W * 0.50, W - paddle.w);
+      // Full pitch movement
+      paddle.x = clamp(paddle.x, 0, W - paddle.w);
       paddle.y = clamp(paddle.y, 0, H - paddle.h);
     }
 
@@ -709,9 +1170,11 @@
         ball.curve = 0;
         if (p.isPlayer) ball.vy += playerVelY * 0.3;
 
-        // Rubber bounce effect on paddle + sound
+        // Rubber bounce effect on paddle + kick sound
         const bounceKey = p.isLeft ? 'left' : 'right';
-        paddleBounce[bounceKey] = { timer: 0.3, intensity: Math.min(newSpeed / (W * 0.3), 1.0) };
+        const hitIntensity = Math.min(newSpeed / (W * 0.3), 1.0);
+        paddleBounce[bounceKey] = { timer: 0.3, intensity: hitIntensity };
+        playKickSound(hitIntensity);
 
         return true;
       }
@@ -774,13 +1237,6 @@
       for (let s = 0; s < steps; s++) {
         ball.x += ball.vx * subDt;
         ball.y += ball.vy * subDt;
-
-        // Apply curve (MID zone curving shot)
-        if (ball.curve !== 0) {
-          ball.vy += ball.curve * subDt;
-          ball.curve *= 0.98;  // decay curve over time
-          if (Math.abs(ball.curve) < 1) ball.curve = 0;
-        }
 
         // Z-axis (lob)
         if (ball.z > 0 || ball.vz > 0) {
@@ -849,22 +1305,23 @@
         const goalLineL = W * GOAL_LINE_RATIO;
         const goalLineR = W * (1 - GOAL_LINE_RATIO);
 
-        // Goal scoring
+        // Goal scoring (skip if ball is held — prevents double-goal after reset)
+        if (ballState === 'held_player' || ballState === 'held_ai') break;
         if (ball.x - ball.size / 2 < goalLineL && ball.y > gt && ball.y < gb) {
           // Right team (AI) scored on left goal
           const scorerId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
           scoreR++;
-          netRattleLeft = 1.2; netRattleSeed = Math.random() * 1000;
+          goalLog.push({ side: 'right', scorer: scorerId ? scorerId.player.name : '?', num: scorerId ? scorerId.player.num : '', time: Math.floor(MATCH_TIME - matchTimer) });
+          netRattleLeft = 2.5; netRattleSeed = Math.random() * 1000;
           goalCelebration = {
             scorer: scorerId ? scorerId.player.name.toUpperCase() : 'GOAL',
             num: scorerId ? scorerId.player.num : '',
-            team: TEAM_RIGHT,
+            team: activeRightData,
             timer: CELEBRATION_TIME,
             side: 'right',
             paddle: rightTeam ? rightTeam.paddle : null,
             ballY: ball.y
           };
-          crowdRoar(); playGol();
           resetAfterGoal(true);
           return;
         }
@@ -872,18 +1329,18 @@
           // Left team (player) scored on right goal
           const scorerId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
           scoreL++;
-          netRattleRight = 1.2; netRattleSeed = Math.random() * 1000;
+          goalLog.push({ side: 'left', scorer: scorerId ? scorerId.player.name : '?', num: scorerId ? scorerId.player.num : '', time: Math.floor(MATCH_TIME - matchTimer) });
+          netRattleRight = 2.5; netRattleSeed = Math.random() * 1000;
           lastShotMaxZ = currentMaxZ;
           goalCelebration = {
             scorer: scorerId ? scorerId.player.name.toUpperCase() : 'GOAL',
             num: scorerId ? scorerId.player.num : '',
-            team: TEAM_LEFT,
+            team: activeLeftData,
             timer: CELEBRATION_TIME,
             side: 'left',
             paddle: leftTeam ? leftTeam.paddle : null,
             ballY: ball.y
           };
-          crowdRoar(); playGol();
           resetAfterGoal(false);
           return;
         }
@@ -924,17 +1381,48 @@
 
       if (!leftTeam || !ball) return;
 
+      // Match timer countdown
+      if (!matchOver && gameMode === 'match3d') {
+        matchTimer -= dt / SPEED_3D;  // use real time, not scaled time
+      } else if (!matchOver) {
+        matchTimer -= dt;
+      }
+      if (matchTimer <= 0 && !inInjuryTime && !matchOver) {
+        inInjuryTime = true;
+        matchTimer = injuryTime;  // extra time
+      }
+      if (matchTimer <= 0 && inInjuryTime && !matchOver) {
+        matchTimer = 0;
+        matchOver = true;
+        goalPause = 999;  // freeze gameplay
+      }
+
+      // Track possession (which half is the ball in)
+      if (!matchOver && ball && ballState === 'live') {
+        const realDt = gameMode === 'match3d' ? dt / SPEED_3D : dt;
+        if (ball.x < W * 0.5) possessionRight += realDt;  // ball in left half = right team attacking
+        else possessionLeft += realDt;  // ball in right half = left team attacking
+      }
+
       const playerPaddle = leftTeam.paddle;
       const aiPad = rightTeam.paddle;
       const pSpeed = H * PADDLE_SPEED_RATIO;
 
-      // ── Player movement (always controls one paddle, free movement in left half) ──
+      // ── Player movement (full pitch, slowed in opponent's half) ──
       if (playerPaddle) {
-        if (keys['ArrowUp'])    playerPaddle.y -= pSpeed * dt;
-        if (keys['ArrowDown'])  playerPaddle.y += pSpeed * dt;
-        if (keys['ArrowLeft'])  playerPaddle.x -= pSpeed * dt;
-        if (keys['ArrowRight']) playerPaddle.x += pSpeed * dt;
-        playerPaddle.x = clamp(playerPaddle.x, 0, W * 0.50 - playerPaddle.w);
+        const px = playerPaddle.x + playerPaddle.w / 2;
+        const inEnemyHalf = px > W * 0.5;
+        const speedMult = inEnemyHalf ? 0.65 : 1.0;  // slower in enemy half
+        if (keys['ArrowUp'])    playerPaddle.y -= pSpeed * speedMult * dt;
+        if (keys['ArrowDown'])  playerPaddle.y += pSpeed * speedMult * dt;
+        if (keys['ArrowLeft'])  playerPaddle.x -= pSpeed * speedMult * dt;
+        if (keys['ArrowRight']) playerPaddle.x += pSpeed * speedMult * dt;
+        // Magnetic pull back toward own half when in opponent's territory
+        if (inEnemyHalf) {
+          const overBy = (px - W * 0.5) / (W * 0.5);  // 0-1 how deep in enemy half
+          playerPaddle.x -= overBy * pSpeed * 0.3 * dt;  // gentle pull back
+        }
+        playerPaddle.x = clamp(playerPaddle.x, 0, W - playerPaddle.w);
         playerPaddle.y = clamp(playerPaddle.y, 0, H - playerPaddle.h);
 
         playerVelY = (playerPaddle.y - playerPrevY) / Math.max(dt, 0.001);
@@ -959,6 +1447,67 @@
       for (const key in paddleBounce) {
         paddleBounce[key].timer -= dt;
         if (paddleBounce[key].timer <= 0) delete paddleBounce[key];
+      }
+
+      // Foul cooldown
+      if (foulCooldown > 0) foulCooldown -= dt;
+
+      // ── Paddle-to-paddle collision → foul ──
+      if (playerPaddle && aiPad && ballState === 'live' && foulCooldown <= 0 && !foulState) {
+        const overlap = playerPaddle.x + playerPaddle.w > aiPad.x &&
+                        playerPaddle.x < aiPad.x + aiPad.w &&
+                        playerPaddle.y + playerPaddle.h > aiPad.y &&
+                        playerPaddle.y < aiPad.y + aiPad.h;
+        if (overlap) {
+          // Determine who fouled: the one in the other's half
+          const playerInEnemyHalf = (playerPaddle.x + playerPaddle.w / 2) > W * 0.5;
+          const aiInEnemyHalf = (aiPad.x + aiPad.w / 2) < W * 0.5;
+          const foulX = (playerPaddle.x + aiPad.x) / 2 + playerPaddle.w / 2;
+          const foulY = (playerPaddle.y + aiPad.y) / 2 + playerPaddle.h / 2;
+          // Fouling team is whoever is deeper in enemy territory
+          const foulingTeam = playerInEnemyHalf ? 'left' : 'right';
+          const isPenalty = (foulingTeam === 'left' && foulX > W * 0.95) ||
+                            (foulingTeam === 'right' && foulX < W * 0.05);
+
+          foulState = { x: foulX, y: foulY, team: foulingTeam, timer: 2.0, isPenalty };
+          foulCooldown = 4.0;  // no fouls for 4 seconds
+
+          // Place ball at foul spot for free kick (awarded to other team)
+          ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.curve = 0;
+          if (foulingTeam === 'left') {
+            // Free kick for right team (AI)
+            ball.x = isPenalty ? W * 0.12 : foulX;
+            ball.y = isPenalty ? H * 0.5 : foulY;
+            ballState = 'held_ai';
+            holdPaddle = aiPad;
+            aiHoldTimer = 0.8 + Math.random() * 0.6;
+          } else {
+            // Free kick for left team (player)
+            ball.x = isPenalty ? W * 0.88 : foulX;
+            ball.y = isPenalty ? H * 0.5 : foulY;
+            ballState = 'held_player';
+            holdPaddle = playerPaddle;
+          }
+          holdTimer = 0;
+          stickBallToFront(holdPaddle);
+
+          // Push paddles apart
+          if (playerInEnemyHalf) {
+            playerPaddle.x = Math.min(playerPaddle.x, W * 0.48 - playerPaddle.w);
+          }
+          if (aiInEnemyHalf) {
+            aiPad.x = Math.max(aiPad.x, W * 0.52);
+          }
+
+          goalPause = 1.5;  // brief pause for the foul
+          playWhistle();
+        }
+      }
+
+      // Decay foul display
+      if (foulState) {
+        foulState.timer -= dt;
+        if (foulState.timer <= 0) foulState = null;
       }
 
       if (goalPause > 0) { goalPause -= dt; return; }
@@ -1021,15 +1570,15 @@
       const borderW = 3;
       ctx.shadowBlur = 15;
 
-      ctx.shadowColor = TEAM_LEFT.primary;
-      ctx.strokeStyle = TEAM_LEFT.primary;
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.strokeStyle = activeLeftData.primary;
       ctx.lineWidth = borderW;
       ctx.beginPath();
       ctx.moveTo(W / 2, 0); ctx.lineTo(0, 0); ctx.lineTo(0, H); ctx.lineTo(W / 2, H);
       ctx.stroke();
 
-      ctx.shadowColor = TEAM_RIGHT.primary;
-      ctx.strokeStyle = TEAM_RIGHT.primary;
+      ctx.shadowColor = activeRightData.primary;
+      ctx.strokeStyle = activeRightData.primary;
       ctx.beginPath();
       ctx.moveTo(W / 2, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H); ctx.lineTo(W / 2, H);
       ctx.stroke();
@@ -1095,8 +1644,8 @@
       const netVLines = 6;           // vertical/depth strings
 
       ctx.save();
-      const intensity = rattle / 1.2;
-      const freq = 20 + netRattleSeed % 12;
+      const intensity = rattle / 2.5;
+      const freq = 25 + netRattleSeed % 15;
       const now = performance.now() / 1000;
 
       // Base net opacity (always visible)
@@ -1107,15 +1656,15 @@
       ctx.lineWidth = 1;
       if (intensity > 0) {
         ctx.shadowColor = '#fff';
-        ctx.shadowBlur = 12 * intensity;
+        ctx.shadowBlur = 20 * intensity;
       }
 
       // Horizontal strings (across the goal mouth, going into depth)
       for (let i = 0; i <= netHLines; i++) {
         const t = i / netHLines;
         const ny = gt + t * (gb - gt);
-        const shake = intensity * Math.sin(now * freq + i * 2.3 + netRattleSeed) * 8;
-        const shakeY = intensity * Math.sin(now * freq * 1.3 + i * 1.7 + netRattleSeed) * 3;
+        const shake = intensity * Math.sin(now * freq + i * 2.3 + netRattleSeed) * 18;
+        const shakeY = intensity * Math.sin(now * freq * 1.3 + i * 1.7 + netRattleSeed) * 7;
         const x1 = x, y1 = ny;
         const x2 = x - dir * netDepth + shake, y2 = ny + shakeY;
         if (projFn) {
@@ -1130,7 +1679,7 @@
       for (let i = 0; i <= netVLines; i++) {
         const t = i / netVLines;
         const nx = x - dir * netDepth * t;
-        const shake = intensity * Math.sin(now * freq * 0.9 + i * 3.1 + netRattleSeed) * 6 * t;
+        const shake = intensity * Math.sin(now * freq * 0.9 + i * 3.1 + netRattleSeed) * 14 * t;
         const x1 = nx + shake, y1 = gt + shake * 0.2;
         const x2 = nx + shake, y2 = gb + shake * 0.2;
         if (projFn) {
@@ -1143,7 +1692,7 @@
 
       // Back wall of net (vertical line at full depth)
       const backX = x - dir * netDepth;
-      const backShake = intensity * Math.sin(now * freq + netRattleSeed) * 5;
+      const backShake = intensity * Math.sin(now * freq + netRattleSeed) * 12;
       if (projFn) {
         const p1 = projFn(backX + backShake, gt, 0), p2 = projFn(backX + backShake, gb, 0);
         ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
@@ -1199,10 +1748,6 @@
         ctx.fillStyle = neonColor;
         ctx.fillRect(p.x, p.y, p.w, p.h);
         ctx.restore();
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.font = 'bold 9px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(`#${displayNum} ${displayName.toUpperCase()}`, p.x + p.w / 2, p.y + p.h + 14);
         return;
       }
 
@@ -1226,15 +1771,7 @@
 
       ctx.restore();
 
-      // Label above: #NUM NAME (glowing)
-      ctx.save();
-      ctx.shadowColor = neonColor;
-      ctx.shadowBlur = 6;
-      ctx.fillStyle = neonColor;
-      ctx.font = 'bold 8px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`#${displayNum}`, p.x + p.w / 2, p.y - 6);
-      ctx.restore();
+      // No label on paddle — player name shown in scoreboard HUD
     }
 
     function lerpPt(a, b, t) {
@@ -1315,27 +1852,62 @@
 
     function drawScoreboard() {
       ctx.save();
-      // Neon LED scoreboard at top center
-      ctx.textAlign = 'center';
 
-      // Team codes in neon team colors
+      // Get current player identities
+      const leftId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
+      const rightId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
+
+      // Row 1: ITA  0 - 0  GER  with clock below
+      const scoreLineY = 24;
       ctx.font = 'bold 14px monospace';
       ctx.shadowBlur = 8;
 
-      ctx.shadowColor = TEAM_LEFT.primary;
-      ctx.fillStyle = TEAM_LEFT.primary;
-      ctx.fillText(TEAM_LEFT.short, W / 2 - 55, 30);
+      // Left team code
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.fillStyle = activeLeftData.primary;
+      ctx.textAlign = 'right';
+      ctx.fillText(activeLeftData.short, W / 2 - 55, scoreLineY);
 
-      ctx.shadowColor = TEAM_RIGHT.primary;
-      ctx.fillStyle = TEAM_RIGHT.primary;
-      ctx.fillText(TEAM_RIGHT.short, W / 2 + 55, 30);
-
-      // Score — large glowing white
+      // Score
       ctx.shadowColor = '#fff';
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 10;
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 32px monospace';
-      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, 35);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 22px monospace';
+      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, scoreLineY + 2);
+
+      // Right team code
+      ctx.font = 'bold 14px monospace';
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = activeRightData.primary;
+      ctx.fillStyle = activeRightData.primary;
+      ctx.textAlign = 'left';
+      ctx.fillText(activeRightData.short, W / 2 + 55, scoreLineY);
+
+      // Clock below score
+      const displayMin = inInjuryTime ? `90+${Math.ceil(injuryTime - matchTimer)}'` : `${Math.floor(MATCH_TIME - matchTimer)}'`;
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.shadowBlur = 6;
+      const isLate = inInjuryTime || matchTimer < 10;
+      ctx.fillStyle = isLate ? '#f44' : '#aaa';
+      ctx.shadowColor = isLate ? '#f44' : '#666';
+      ctx.fillText(displayMin, W / 2, scoreLineY + 20);
+
+      // Row 2: Player identities
+      ctx.font = 'bold 12px monospace';
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.fillStyle = activeLeftData.primary;
+      ctx.textAlign = 'left';
+      const leftPlayer = leftId ? leftId.player.name.toUpperCase() : '';
+      ctx.fillText(leftPlayer, 15, scoreLineY + 38);
+
+      ctx.shadowColor = activeRightData.primary;
+      ctx.fillStyle = activeRightData.primary;
+      ctx.textAlign = 'right';
+      const rightPlayer = rightId ? rightId.player.name.toUpperCase() : '';
+      ctx.fillText(rightPlayer, W - 15, scoreLineY + 38);
 
       ctx.restore();
     }
@@ -1395,7 +1967,7 @@
       ctx.fillText('PONGBALL', cx, cy - 60);
 
       // Menu items
-      const items = ['MATCH', 'MATCH 3D', 'PHYSICS LAB', 'WORLD CUP'];
+      const items = ['PHYSICS LAB', 'COFFEE TABLE', '2.5D MATCH', 'MATCH', 'WORLD CUP'];
 
       items.forEach((label, i) => {
         const iy = cy + 20 + i * 50;
@@ -1420,6 +1992,22 @@
 
       if (gameMode === 'physics') {
         drawPhysicsHUD();
+      }
+
+      // ─── Foul indicator (2D) ───
+      if (foulState) {
+        const alpha = Math.min(foulState.timer, 1);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 24px monospace';
+        ctx.shadowColor = '#ff0';
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#ff0';
+        ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', foulState.x, foulState.y - 30);
+        const cardW = 14, cardH = 18;
+        ctx.fillRect(foulState.x - cardW / 2, foulState.y - 55, cardW, cardH);
+        ctx.restore();
       }
 
       // ─── Goal celebration overlay (2D) ───
@@ -1464,6 +2052,9 @@
         ctx.restore();
       }
 
+      // Game over overlay
+      if (matchOver) drawGameOver();
+
       // ESC hint
       ctx.fillStyle = 'rgba(255,255,255,0.15)';
       ctx.font = '9px monospace';
@@ -1471,28 +2062,351 @@
       ctx.fillText('ESC = menu', W / 2, H - 8);
     }
 
-    // ─── WORLD CUP SCREEN ───
-    function renderWorldCup() {
-      ctx.fillStyle = '#000';
+    // ─── GAME OVER OVERLAY ───
+    function drawGameOver() {
+      ctx.save();
+      // Dark overlay
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(0, 0, W, H);
 
-      const cx = W / 2;
-
-      // Title
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${Math.max(28, W * 0.03)}px monospace`;
       ctx.textAlign = 'center';
-      ctx.fillText('WORLD CUP', cx, H * 0.15);
 
-      // Coming soon placeholder
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.font = 'bold 14px monospace';
-      ctx.fillText('COMING SOON', cx, H * 0.25);
+      // FULL TIME
+      ctx.font = 'bold 18px monospace';
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#aaa';
+      ctx.fillText('FULL TIME', W / 2, H * 0.32);
 
-      // ESC hint
-      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      // Final score
+      ctx.font = 'bold 48px monospace';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, H * 0.43);
+
+      // Team names
+      ctx.font = 'bold 16px monospace';
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = activeLeftData.primary;
+      ctx.fillText(activeLeftData.short, W / 2 - 80, H * 0.50);
+      ctx.shadowColor = activeRightData.primary;
+      ctx.fillStyle = activeRightData.primary;
+      ctx.fillText(activeRightData.short, W / 2 + 80, H * 0.50);
+
+      // Goal scorers — two columns
+      if (goalLog.length > 0) {
+        ctx.font = '11px monospace';
+        ctx.shadowBlur = 4;
+        const colX = W / 2;
+        let gy = H * 0.56;
+        const leftGoals = goalLog.filter(g => g.side === 'left');
+        const rightGoals = goalLog.filter(g => g.side === 'right');
+        const maxGoals = Math.max(leftGoals.length, rightGoals.length);
+        for (let i = 0; i < maxGoals; i++) {
+          if (leftGoals[i]) {
+            ctx.textAlign = 'right';
+            ctx.shadowColor = activeLeftData.primary;
+            ctx.fillStyle = activeLeftData.primary;
+            ctx.fillText(`${leftGoals[i].scorer} ${leftGoals[i].time}'`, colX - 15, gy);
+          }
+          if (rightGoals[i]) {
+            ctx.textAlign = 'left';
+            ctx.shadowColor = activeRightData.primary;
+            ctx.fillStyle = activeRightData.primary;
+            ctx.fillText(`${rightGoals[i].time}' ${rightGoals[i].scorer}`, colX + 15, gy);
+          }
+          gy += 15;
+        }
+      }
+
+      // Man of the Match — player with most goals
+      const scorerCounts = {};
+      goalLog.forEach(g => {
+        const key = `${g.side}:${g.scorer}`;
+        scorerCounts[key] = (scorerCounts[key] || 0) + 1;
+      });
+      let momKey = null, momCount = 0;
+      for (const [key, count] of Object.entries(scorerCounts)) {
+        if (count > momCount) { momKey = key; momCount = count; }
+      }
+      if (momKey && goalLog.length > 0) {
+        const momSide = momKey.split(':')[0];
+        const momName = momKey.split(':')[1];
+        const momTeam = momSide === 'left' ? activeLeftData : activeRightData;
+        const momY = H * 0.56 + Math.max(goalLog.filter(g=>g.side==='left').length, goalLog.filter(g=>g.side==='right').length) * 15 + 20;
+        ctx.textAlign = 'center';
+        ctx.font = '10px monospace';
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#888';
+        ctx.fillText('MAN OF THE MATCH', W / 2, momY);
+        ctx.font = 'bold 14px monospace';
+        ctx.shadowColor = momTeam.primary;
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = momTeam.primary;
+        ctx.fillText(momName.toUpperCase(), W / 2, momY + 18);
+      }
+
+      // Possession stats
+      const goalRows = Math.max(goalLog.filter(g=>g.side==='left').length, goalLog.filter(g=>g.side==='right').length);
+      const momOffset = (momKey && goalLog.length > 0) ? 40 : 0;
+      const possY = H * 0.56 + goalRows * 15 + 20 + momOffset;
+      const totalPoss = possessionLeft + possessionRight;
+      if (totalPoss > 0) {
+        const possL = Math.round(possessionLeft / totalPoss * 100);
+        const possR = 100 - possL;
+        ctx.textAlign = 'center';
+        ctx.font = '10px monospace';
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#666';
+        ctx.fillText('POSSESSION', W / 2, possY);
+        // Possession bar
+        const barW = 160, barH = 6;
+        const barX = W / 2 - barW / 2;
+        const barY2 = possY + 6;
+        ctx.fillStyle = activeLeftData.primary;
+        ctx.globalAlpha = 0.7;
+        ctx.fillRect(barX, barY2, barW * possL / 100, barH);
+        ctx.fillStyle = activeRightData.primary;
+        ctx.fillRect(barX + barW * possL / 100, barY2, barW * possR / 100, barH);
+        ctx.globalAlpha = 1;
+        // Percentages
+        ctx.font = 'bold 11px monospace';
+        ctx.shadowColor = activeLeftData.primary;
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = activeLeftData.primary;
+        ctx.textAlign = 'right';
+        ctx.fillText(`${possL}%`, barX - 6, barY2 + 6);
+        ctx.shadowColor = activeRightData.primary;
+        ctx.fillStyle = activeRightData.primary;
+        ctx.textAlign = 'left';
+        ctx.fillText(`${possR}%`, barX + barW + 6, barY2 + 6);
+      }
+
+      // Restart hint
+      const hintY = Math.min(H * 0.90, possY + 30);
+      ctx.textAlign = 'center';
+      ctx.font = '12px monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.shadowBlur = 0;
+      ctx.fillText('SPACE = rematch  ·  ESC = menu', W / 2, hintY);
+
+      ctx.restore();
+    }
+
+    // ─── WORLD CUP SCREEN ───
+    function renderWorldCup() {
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, W, H);
+      if (!wcState) return;
+
+      const cx = W / 2;
+      ctx.textAlign = 'center';
+
+      // Title bar
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 10;
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText('ITALIA \'90', cx, 30);
+      ctx.shadowBlur = 0;
+
+      const phase = wcState.phase;
+
+      if (phase === 'group_show' || phase === 'group_play' || phase === 'group_done') {
+        renderWCGroups();
+      } else if (phase === 'r16_show' || phase === 'r16_play') {
+        renderWCBracket('ROUND OF 16', wcState.bracket.r16);
+      } else if (phase === 'qf_show' || phase === 'qf_play') {
+        renderWCBracket('QUARTER-FINALS', wcState.bracket.qf);
+      } else if (phase === 'sf_show' || phase === 'sf_play') {
+        renderWCBracket('SEMI-FINALS', wcState.bracket.sf);
+      } else if (phase === 'final_show' || phase === 'final_play') {
+        renderWCBracket('FINAL', wcState.bracket.final);
+      } else if (phase === 'champion') {
+        renderWCChampion();
+      } else if (phase === 'eliminated') {
+        renderWCEliminated();
+      }
+
+      // Controls hint
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
       ctx.font = '11px monospace';
-      ctx.fillText('ESC = back to menu', cx, H * 0.92);
+      ctx.textAlign = 'center';
+      if (phase.endsWith('_show') || phase === 'group_done') {
+        ctx.fillText('SPACE = continue  ·  ESC = menu', cx, H - 12);
+      } else {
+        ctx.fillText('ESC = menu', cx, H - 12);
+      }
+    }
+
+    function renderWCGroups() {
+      const groupNames = Object.keys(WC_GROUPS);
+      const cols = 3;
+      const rows = 2;
+      const cellW = W / cols;
+      const cellH = (H - 60) / rows;
+
+      groupNames.forEach((g, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = col * cellW + cellW / 2;
+        const y = 55 + row * cellH;
+
+        // Group header
+        ctx.fillStyle = '#888';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`GROUP ${g}`, x, y);
+
+        // Standings table
+        const standings = wcState.groupStandings[g];
+        standings.forEach((s, j) => {
+          const ty = y + 20 + j * 20;
+          const team = WC_TEAMS[s.team];
+          const isItaly = s.team === 'ITA';
+
+          ctx.textAlign = 'left';
+          ctx.font = isItaly ? 'bold 11px monospace' : '11px monospace';
+          ctx.fillStyle = isItaly ? team.primary : (team ? team.primary : '#aaa');
+          ctx.shadowColor = isItaly ? team.primary : 'transparent';
+          ctx.shadowBlur = isItaly ? 6 : 0;
+
+          const name = team ? team.short : s.team;
+          ctx.fillText(name, x - cellW * 0.35, ty);
+
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#aaa';
+          ctx.shadowBlur = 0;
+          ctx.font = '10px monospace';
+          // W D L GF GA Pts
+          const stats = `${s.w} ${s.d} ${s.l}  ${s.gf}:${s.ga}`;
+          ctx.fillText(stats, x + 10, ty);
+
+          // Points
+          ctx.textAlign = 'right';
+          ctx.font = 'bold 11px monospace';
+          ctx.fillStyle = isItaly ? '#fff' : '#ccc';
+          ctx.fillText(`${s.pts}`, x + cellW * 0.35, ty);
+        });
+
+        // Match results below standings
+        const matches = wcState.groupMatches[g];
+        const matchY = y + 110;
+        matches.forEach((m, j) => {
+          if (!m.played) return;
+          const my = matchY + j * 14;
+          const hTeam = WC_TEAMS[m.home];
+          const aTeam = WC_TEAMS[m.away];
+          ctx.font = '9px monospace';
+          ctx.fillStyle = '#666';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${hTeam ? hTeam.short : m.home} ${m.scoreH}-${m.scoreA} ${aTeam ? aTeam.short : m.away}`, x, my);
+        });
+      });
+    }
+
+    function renderWCBracket(title, matches) {
+      const cx = W / 2;
+      ctx.fillStyle = '#aaa';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, cx, 55);
+
+      matches.forEach((m, i) => {
+        const my = 90 + i * 55;
+        const hTeam = WC_TEAMS[m.home];
+        const aTeam = WC_TEAMS[m.away];
+        const hColor = hTeam ? hTeam.primary : '#aaa';
+        const aColor = aTeam ? aTeam.primary : '#aaa';
+        const isPlayerMatch = wcIsPlayerMatch(m);
+
+        // Background highlight for player match
+        if (isPlayerMatch) {
+          ctx.fillStyle = 'rgba(0,60,165,0.1)';
+          ctx.fillRect(cx - 180, my - 15, 360, 40);
+        }
+
+        // Home team
+        ctx.font = isPlayerMatch ? 'bold 14px monospace' : '13px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = hColor;
+        ctx.shadowColor = m.home === 'ITA' ? hColor : 'transparent';
+        ctx.shadowBlur = m.home === 'ITA' ? 8 : 0;
+        ctx.fillText(hTeam ? hTeam.name.toUpperCase() : m.home, cx - 30, my);
+
+        // Score or vs
+        ctx.textAlign = 'center';
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px monospace';
+        if (m.played) {
+          ctx.fillText(`${m.scoreH} - ${m.scoreA}`, cx, my);
+        } else {
+          ctx.fillStyle = '#555';
+          ctx.fillText('vs', cx, my);
+        }
+
+        // Away team
+        ctx.font = isPlayerMatch ? 'bold 14px monospace' : '13px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = aColor;
+        ctx.shadowColor = m.away === 'ITA' ? aColor : 'transparent';
+        ctx.shadowBlur = m.away === 'ITA' ? 8 : 0;
+        ctx.fillText(aTeam ? aTeam.name.toUpperCase() : m.away, cx + 30, my);
+        ctx.shadowBlur = 0;
+      });
+    }
+
+    function renderWCChampion() {
+      const cx = W / 2;
+      ctx.save();
+
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 30;
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold 36px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('WORLD CHAMPIONS', cx, H * 0.35);
+
+      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = TEAM_LEFT.primary;
+      ctx.font = 'bold 48px monospace';
+      ctx.fillText('ITALY', cx, H * 0.48);
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText('ITALIA \'90', cx, H * 0.58);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '12px monospace';
+      ctx.fillText('SPACE = play again  ·  ESC = menu', cx, H * 0.72);
+      ctx.restore();
+    }
+
+    function renderWCEliminated() {
+      const cx = W / 2;
+      ctx.save();
+
+      ctx.fillStyle = '#c00';
+      ctx.shadowColor = '#c00';
+      ctx.shadowBlur = 15;
+      ctx.font = 'bold 28px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('ELIMINATED', cx, H * 0.38);
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#888';
+      ctx.font = '14px monospace';
+      const phaseName = wcState.phase === 'eliminated' ? '' : '';
+      ctx.fillText('Italy\'s World Cup dream is over.', cx, H * 0.48);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '12px monospace';
+      ctx.fillText('SPACE = try again  ·  ESC = menu', cx, H * 0.62);
+      ctx.restore();
     }
 
     // ─── CUTSCENE RENDER ───
@@ -1798,8 +2712,8 @@
       const mr = project3D(W, H / 2, 0);
 
       // Left half border (Italy blue)
-      ctx.strokeStyle = TEAM_LEFT.primary;
-      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.strokeStyle = activeLeftData.primary;
+      ctx.shadowColor = activeLeftData.primary;
       ctx.shadowBlur = 15;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -1808,8 +2722,8 @@
       ctx.stroke();
 
       // Right half border (Germany white)
-      ctx.strokeStyle = TEAM_RIGHT.primary;
-      ctx.shadowColor = TEAM_RIGHT.primary;
+      ctx.strokeStyle = activeRightData.primary;
+      ctx.shadowColor = activeRightData.primary;
       ctx.beginPath();
       ctx.moveTo(mt.x, mt.y); ctx.lineTo(tr.x, tr.y);
       ctx.lineTo(br.x, br.y); ctx.lineTo(mb.x, mb.y);
@@ -1881,9 +2795,9 @@
         ctx.globalAlpha = alpha;
         ctx.font = `bold ${fontSize}px monospace`;
         ctx.shadowBlur = 25;
-        ctx.shadowColor = TEAM_LEFT.primary;
-        ctx.fillStyle = TEAM_LEFT.primary;
-        ctx.fillText(TEAM_LEFT.name.toUpperCase(), W * 0.35, H * 0.48);
+        ctx.shadowColor = activeLeftData.primary;
+        ctx.fillStyle = activeLeftData.primary;
+        ctx.fillText(activeLeftData.name.toUpperCase(), W * 0.35, H * 0.48);
         ctx.restore();
 
         ctx.save();
@@ -1899,9 +2813,9 @@
         ctx.globalAlpha = alpha;
         ctx.font = `bold ${fontSize}px monospace`;
         ctx.shadowBlur = 25;
-        ctx.shadowColor = TEAM_RIGHT.primary;
-        ctx.fillStyle = TEAM_RIGHT.primary;
-        ctx.fillText(TEAM_RIGHT.name.toUpperCase(), W * 0.65, H * 0.48);
+        ctx.shadowColor = activeRightData.primary;
+        ctx.fillStyle = activeRightData.primary;
+        ctx.fillText(activeRightData.name.toUpperCase(), W * 0.65, H * 0.48);
         ctx.restore();
       }
 
@@ -2053,9 +2967,9 @@
 
       // Left half border — team left color
       ctx.save();
-      ctx.shadowColor = TEAM_LEFT.primary;
+      ctx.shadowColor = activeLeftData.primary;
       ctx.shadowBlur = 20;
-      ctx.strokeStyle = TEAM_LEFT.primary;
+      ctx.strokeStyle = activeLeftData.primary;
       ctx.beginPath();
       const ml = project3D(0, H / 2, 0);
       const mt = project3D(W / 2, 0, 0);
@@ -2073,9 +2987,9 @@
 
       // Right half border — team right color
       ctx.save();
-      ctx.shadowColor = TEAM_RIGHT.primary;
+      ctx.shadowColor = activeRightData.primary;
       ctx.shadowBlur = 20;
-      ctx.strokeStyle = TEAM_RIGHT.primary;
+      ctx.strokeStyle = activeRightData.primary;
       ctx.beginPath();
       const mr = project3D(W, H / 2, 0);
       ctx.moveTo(mr.x, mr.y);
@@ -2396,17 +3310,17 @@
       // Left team name + player — aligned to left court edge
       ctx.font = 'bold 13px monospace';
       ctx.shadowBlur = 8;
-      ctx.shadowColor = TEAM_LEFT.primary;
-      ctx.fillStyle = TEAM_LEFT.primary;
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.fillStyle = activeLeftData.primary;
       ctx.textAlign = 'left';
-      const leftLabel = leftId ? `${TEAM_LEFT.short}  #${leftId.player.num} ${leftId.player.name.toUpperCase()}` : TEAM_LEFT.short;
+      const leftLabel = leftId ? `${activeLeftData.short}  #${leftId.player.num} ${leftId.player.name.toUpperCase()}` : activeLeftData.short;
       ctx.fillText(leftLabel, tl.x, teamNameY);
 
       // Right team name + player — aligned to right court edge
-      ctx.shadowColor = TEAM_RIGHT.primary;
-      ctx.fillStyle = TEAM_RIGHT.primary;
+      ctx.shadowColor = activeRightData.primary;
+      ctx.fillStyle = activeRightData.primary;
       ctx.textAlign = 'right';
-      const rightLabel = rightId ? `${rightId.player.name.toUpperCase()} #${rightId.player.num}  ${TEAM_RIGHT.short}` : TEAM_RIGHT.short;
+      const rightLabel = rightId ? `${rightId.player.name.toUpperCase()} #${rightId.player.num}  ${activeRightData.short}` : activeRightData.short;
       ctx.fillText(rightLabel, tr.x, teamNameY);
 
       // Score — centered, on its own line below team names
@@ -2416,6 +3330,15 @@
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 26px monospace';
       ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, scoreY + 2);
+
+      // Match timer — football minutes
+      const displayMin3 = inInjuryTime ? `90+${Math.ceil(injuryTime - matchTimer)}'` : `${Math.floor(MATCH_TIME - matchTimer)}'`;
+      ctx.font = 'bold 13px monospace';
+      ctx.shadowBlur = 6;
+      const isLate3 = inInjuryTime || matchTimer < 10;
+      ctx.fillStyle = isLate3 ? '#f44' : '#aaa';
+      ctx.shadowColor = isLate3 ? '#f44' : '#666';
+      ctx.fillText(displayMin3, W / 2, scoreY + 22);
       ctx.restore();
 
       // ─── HUD (charge bar, projected near ball) ───
@@ -2434,6 +3357,26 @@
         const cg = Math.round(255 * (1 - charge * 0.4));
         ctx.fillStyle = `rgb(${cr},${cg},80)`;
         ctx.fillRect(hp.x, hp.y, barW * charge, barH);
+        ctx.restore();
+      }
+
+      // ─── Foul indicator ───
+      if (foulState) {
+        const fp = project3D(foulState.x, foulState.y, 0);
+        const alpha = Math.min(foulState.timer, 1);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 20px monospace';
+        ctx.shadowColor = '#ff0';
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#ff0';
+        ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', fp.x, fp.y - 30 * fp.scale);
+        // Yellow card flash
+        const cardW = 12 * fp.scale, cardH = 16 * fp.scale;
+        ctx.fillStyle = '#ff0';
+        ctx.shadowBlur = 10;
+        ctx.fillRect(fp.x - cardW / 2, fp.y - 55 * fp.scale, cardW, cardH);
         ctx.restore();
       }
 
@@ -2487,6 +3430,9 @@
         ctx.restore();
       }
 
+      // Game over overlay
+      if (matchOver) drawGameOver();
+
       // ESC hint
       ctx.fillStyle = 'rgba(255,255,255,0.15)';
       ctx.font = '9px monospace';
@@ -2509,6 +3455,734 @@
       ctx.stroke();
     }
 
+    // ═══════════════════════════════════════════
+    //  COFFEE TABLE MODE — Top-down arcade table
+    // ═══════════════════════════════════════════
+
+    // Helper: get coffee table layout dimensions
+    function ctLayout() {
+      const frameW = Math.max(30, Math.min(W, H) * 0.045);
+      const padX = Math.max(8, W * 0.012);
+      const padY = Math.max(8, H * 0.015);
+      const tL = padX, tT = padY;
+      const tW = W - padX * 2, tH = H - padY * 2;
+      const sL = tL + frameW, sT = tT + frameW;
+      const sW = tW - frameW * 2, sH = tH - frameW * 2;
+      return { frameW, tL, tT, tW, tH, sL, sT, sW, sH };
+    }
+
+    function renderCoffeeTable() {
+      const { frameW, tL, tT, tW, tH, sL, sT, sW, sH } = ctLayout();
+      const tR = tL + tW, tB = tT + tH;
+      const sR = sL + sW, sB = sT + sH;
+
+      // ─── Room background (dark) ───
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, W, H);
+
+      // ─── Table body (frame) ───
+      ctx.fillStyle = '#0e0e0e';
+      ctx.fillRect(tL, tT, tW, tH);
+
+      // Slightly lighter inner bevel
+      ctx.fillStyle = '#131313';
+      ctx.fillRect(tL + 3, tT + 3, tW - 6, tH - 6);
+
+      // ─── Art deco corner stripes ───
+      const strW = Math.max(3, frameW * 0.09);
+      const strLen = frameW * 0.7;
+      ctx.save();
+      // Outer corners (bright white L-shapes)
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = strW;
+      ctx.lineCap = 'square';
+      const co = 8; // corner offset from table edge
+      // Top-left
+      ctx.beginPath();
+      ctx.moveTo(tL + co, tT + co + strLen);
+      ctx.lineTo(tL + co, tT + co);
+      ctx.lineTo(tL + co + strLen, tT + co);
+      ctx.stroke();
+      // Top-right
+      ctx.beginPath();
+      ctx.moveTo(tR - co, tT + co + strLen);
+      ctx.lineTo(tR - co, tT + co);
+      ctx.lineTo(tR - co - strLen, tT + co);
+      ctx.stroke();
+      // Bottom-left
+      ctx.beginPath();
+      ctx.moveTo(tL + co, tB - co - strLen);
+      ctx.lineTo(tL + co, tB - co);
+      ctx.lineTo(tL + co + strLen, tB - co);
+      ctx.stroke();
+      // Bottom-right
+      ctx.beginPath();
+      ctx.moveTo(tR - co, tB - co - strLen);
+      ctx.lineTo(tR - co, tB - co);
+      ctx.lineTo(tR - co - strLen, tB - co);
+      ctx.stroke();
+
+      // Inner parallel stripes (thinner, dimmer)
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = Math.max(1, strW * 0.5);
+      const ci = co + strW + 4;
+      const strLen2 = strLen * 0.8;
+      // Top-left
+      ctx.beginPath();
+      ctx.moveTo(tL + ci, tT + ci + strLen2);
+      ctx.lineTo(tL + ci, tT + ci);
+      ctx.lineTo(tL + ci + strLen2, tT + ci);
+      ctx.stroke();
+      // Top-right
+      ctx.beginPath();
+      ctx.moveTo(tR - ci, tT + ci + strLen2);
+      ctx.lineTo(tR - ci, tT + ci);
+      ctx.lineTo(tR - ci - strLen2, tT + ci);
+      ctx.stroke();
+      // Bottom-left
+      ctx.beginPath();
+      ctx.moveTo(tL + ci, tB - ci - strLen2);
+      ctx.lineTo(tL + ci, tB - ci);
+      ctx.lineTo(tL + ci + strLen2, tB - ci);
+      ctx.stroke();
+      // Bottom-right
+      ctx.beginPath();
+      ctx.moveTo(tR - ci, tB - ci - strLen2);
+      ctx.lineTo(tR - ci, tB - ci);
+      ctx.lineTo(tR - ci - strLen2, tB - ci);
+      ctx.stroke();
+      ctx.restore();
+
+      // ─── Branding: PONGBALL on bottom frame ───
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const brandY = (sB + tB) / 2;
+      const brandSize = Math.max(13, frameW * 0.5);
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${brandSize}px monospace`;
+      ctx.fillText('PONGBALL', W / 2, brandY - frameW * 0.12);
+
+      // "ITALIA '90"
+      const subSize = Math.max(7, frameW * 0.24);
+      ctx.font = `bold ${subSize}px monospace`;
+      ctx.fillStyle = '#aaa';
+      ctx.fillText("ITALIA '90", W / 2, brandY + frameW * 0.22);
+
+      // Italian flag stripe
+      const fW = frameW * 1.5;
+      const fH = Math.max(2, frameW * 0.06);
+      const fx = W / 2 - fW / 2;
+      const fy = brandY + frameW * 0.38;
+      ctx.fillStyle = '#009246'; ctx.fillRect(fx, fy, fW / 3, fH);
+      ctx.fillStyle = '#fff';    ctx.fillRect(fx + fW / 3, fy, fW / 3, fH);
+      ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx + fW * 2 / 3, fy, fW / 3, fH);
+      ctx.restore();
+
+      // ─── Scoreboard on top frame ───
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const topY = (tT + sT) / 2;
+      const scoreSize = Math.max(18, frameW * 0.58);
+      const codeSize = Math.max(10, frameW * 0.32);
+      const codeOff = Math.max(55, scoreSize * 3);
+
+      // Score (centered)
+      ctx.font = `bold ${scoreSize}px monospace`;
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`${scoreL} - ${scoreR}`, W / 2, topY);
+
+      // Left team code
+      ctx.font = `bold ${codeSize}px monospace`;
+      ctx.textAlign = 'right';
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = activeLeftData.primary;
+      ctx.fillText(activeLeftData.short, W / 2 - codeOff, topY);
+
+      // Right team code
+      ctx.textAlign = 'left';
+      ctx.shadowColor = activeRightData.primary;
+      ctx.fillStyle = activeRightData.primary;
+      ctx.fillText(activeRightData.short, W / 2 + codeOff, topY);
+
+      // Clock (right side of top frame)
+      const displayMinTop = inInjuryTime
+        ? `90+${Math.ceil(injuryTime - matchTimer)}'`
+        : `${Math.floor(MATCH_TIME - matchTimer)}'`;
+      const isLateTop = inInjuryTime || matchTimer < 10;
+      ctx.textAlign = 'right';
+      ctx.font = `bold ${Math.max(10, frameW * 0.3)}px monospace`;
+      ctx.fillStyle = isLateTop ? '#f44' : '#888';
+      ctx.shadowColor = isLateTop ? '#f44' : '#444';
+      ctx.shadowBlur = 4;
+      ctx.fillText(displayMinTop, sR - 5, topY);
+      ctx.restore();
+
+      // ─── LED border strips (neon glow around surface edge) ───
+      const ledOff = 1;
+      ctx.save();
+      ctx.lineWidth = Math.max(3, frameW * 0.08);
+      const midX = (sL + sR) / 2;
+
+      // Left half — team left color
+      ctx.strokeStyle = activeLeftData.primary;
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.moveTo(midX, sT - ledOff);
+      ctx.lineTo(sL - ledOff, sT - ledOff);
+      ctx.lineTo(sL - ledOff, sB + ledOff);
+      ctx.lineTo(midX, sB + ledOff);
+      ctx.stroke();
+      // Double glow pass
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+
+      // Right half — team right color
+      ctx.strokeStyle = activeRightData.primary;
+      ctx.shadowColor = activeRightData.primary;
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.moveTo(midX, sT - ledOff);
+      ctx.lineTo(sR + ledOff, sT - ledOff);
+      ctx.lineTo(sR + ledOff, sB + ledOff);
+      ctx.lineTo(midX, sB + ledOff);
+      ctx.stroke();
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.restore();
+
+      // ─── Playing surface (game content, clipped & scaled) ───
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(sL, sT, sW, sH);
+      ctx.clip();
+      ctx.translate(sL, sT);
+      ctx.scale(sW / W, sH / H);
+
+      // Render the standard 2D game elements
+      drawField();
+      drawNets();
+      allPaddles.forEach(drawPaddle);
+      drawBall();
+      drawHUD();
+
+      // Foul indicator (in game coordinates)
+      if (foulState) {
+        const alpha = Math.min(foulState.timer, 1);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 24px monospace';
+        ctx.shadowColor = '#ff0';
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#ff0';
+        ctx.fillText(foulState.isPenalty ? 'PENALTY!' : 'FOUL!', foulState.x, foulState.y - 30);
+        const cardW = 14, cardH = 18;
+        ctx.fillRect(foulState.x - cardW / 2, foulState.y - 55, cardW, cardH);
+        ctx.restore();
+      }
+
+      // Goal celebration (in game coordinates)
+      if (goalCelebration) {
+        const gc = goalCelebration;
+        const progress = 1 - gc.timer / CELEBRATION_TIME;
+        const fadeIn = Math.min(progress * 4, 1);
+        const fadeOut = Math.max(0, 1 - (progress - 0.7) / 0.3);
+        const alpha = Math.min(fadeIn, fadeOut);
+
+        if (progress < 0.08) {
+          ctx.save();
+          ctx.globalAlpha = (1 - progress / 0.08) * 0.25;
+          ctx.fillStyle = gc.team.primary;
+          ctx.fillRect(0, 0, W, H);
+          ctx.restore();
+        }
+
+        ctx.save();
+        const goalSize = 48 + Math.sin(progress * Math.PI * 4) * 5;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `bold ${goalSize}px monospace`;
+        ctx.shadowColor = gc.team.primary;
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = alpha;
+        ctx.fillText('GOL!', W / 2, H * 0.38);
+        ctx.shadowBlur = 50;
+        ctx.fillStyle = gc.team.primary;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.fillText('GOL!', W / 2, H * 0.38);
+
+        // Scorer
+        const nameDelay = Math.max(0, (progress - 0.15) * 3);
+        const nameAlpha = Math.min(nameDelay, 1) * fadeOut;
+        ctx.font = 'bold 22px monospace';
+        ctx.shadowColor = gc.team.primary;
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = gc.team.primary;
+        ctx.globalAlpha = nameAlpha;
+        ctx.fillText(`#${gc.num} ${gc.scorer}`, W / 2, H * 0.50);
+        ctx.restore();
+      }
+
+      ctx.restore(); // end surface clip
+
+      // ─── Glass reflection (subtle) ───
+      ctx.save();
+      const glassGrad = ctx.createLinearGradient(sL, sT, sL + sW * 0.6, sT + sH * 0.4);
+      glassGrad.addColorStop(0, 'rgba(255,255,255,0.025)');
+      glassGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = glassGrad;
+      ctx.fillRect(sL, sT, sW, sH);
+      ctx.restore();
+
+      // ─── Player identities on side frames ───
+      const leftId = leftTeam ? getZoneIdentity(leftTeam.paddle, leftTeam.data) : null;
+      const rightId = rightTeam ? getZoneIdentity(rightTeam.paddle, rightTeam.data) : null;
+
+      // Left frame — player's current identity
+      if (leftId) {
+        ctx.save();
+        const lx = (tL + sL) / 2;
+        ctx.translate(lx, sT + sH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `bold ${Math.max(8, frameW * 0.24)}px monospace`;
+        ctx.shadowColor = activeLeftData.primary;
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = activeLeftData.primary;
+        ctx.fillText(`#${leftId.player.num} ${leftId.player.name.toUpperCase()}`, 0, 0);
+        ctx.restore();
+      }
+
+      // Right frame — AI's current identity
+      if (rightId) {
+        ctx.save();
+        const rx = (sR + tR) / 2;
+        ctx.translate(rx, sT + sH / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `bold ${Math.max(8, frameW * 0.24)}px monospace`;
+        ctx.shadowColor = activeRightData.primary;
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = activeRightData.primary;
+        ctx.fillText(`#${rightId.player.num} ${rightId.player.name.toUpperCase()}`, 0, 0);
+        ctx.restore();
+      }
+
+      // Game over overlay (full screen, on top)
+      if (matchOver) drawGameOver();
+
+      // ESC hint
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('ESC = menu', W / 2, H - 4);
+    }
+
+    // ─── COFFEE TABLE CUTSCENE ───
+    // Starts from angled 3D view of the table, flattens to top-down
+    function renderCTCutscene(now) {
+      const t = now / 1000 - ctCutsceneStart;
+
+      if (t >= CT_CUTSCENE_DUR) {
+        ctCutsceneActive = false;
+        lastTime = now;
+        return;
+      }
+
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, W, H);
+
+      // ── Phase timing ──
+      // 0–1.5s: PONGBALL logo flicker
+      // 1.0–3.0s: 3D table view fades in
+      // 2.5–4.0s: perspective flattens to top-down
+      // 3.5–4.5s: team names flash
+
+      const LOGO_END = 1.8;
+      const TABLE_START = 1.0;
+      const FLATTEN_START = 2.5;
+      const FLATTEN_END = 4.0;
+      const TEXT_START = 3.5;
+      const TEXT_END = 4.4;
+
+      // ── Logo phase ──
+      if (t < LOGO_END + 0.5) {
+        const logoAlpha = t < LOGO_END
+          ? Math.min(t * 2, 1)
+          : Math.max(0, 1 - (t - LOGO_END) / 0.5);
+
+        ctx.save();
+        ctx.globalAlpha = logoAlpha;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const letters = 'PONGBALL';
+        const fontSize = Math.max(48, W * 0.07);
+        ctx.font = `bold ${fontSize}px monospace`;
+        const totalW = ctx.measureText(letters).width;
+        const startX = W / 2 - totalW / 2;
+
+        for (let i = 0; i < letters.length; i++) {
+          const letterDelay = i * 0.1;
+          const letterT = Math.max(0, t - letterDelay);
+          if (letterT <= 0) continue;
+
+          let flicker = 1;
+          if (letterT < 0.25) flicker = Math.sin(letterT * 45) > -0.2 ? 1 : 0.1;
+
+          const charW = ctx.measureText(letters[i]).width;
+          const cx = startX + ctx.measureText(letters.substring(0, i)).width + charW / 2;
+          const cy = H * 0.42;
+
+          ctx.save();
+          ctx.globalAlpha = logoAlpha * flicker;
+          ctx.shadowColor = '#88ddff';
+          ctx.shadowBlur = 30 * flicker;
+          ctx.fillStyle = '#fff';
+          ctx.fillText(letters[i], cx, cy);
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 15 * flicker;
+          ctx.fillText(letters[i], cx, cy);
+          ctx.restore();
+        }
+
+        // "ITALIA '90"
+        const subDelay = letters.length * 0.1 + 0.2;
+        if (t > subDelay) {
+          const subAlpha = Math.min((t - subDelay) * 3, 1) * logoAlpha;
+          ctx.save();
+          ctx.globalAlpha = subAlpha;
+          ctx.font = `bold ${Math.max(14, W * 0.018)}px monospace`;
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = '#ccc';
+          ctx.fillText("ITALIA '90", W / 2, H * 0.42 + fontSize * 0.7);
+
+          const flagW = W * 0.06;
+          const flagH = Math.max(2, fontSize * 0.05);
+          const fx = W / 2 - flagW / 2;
+          const fy = H * 0.42 + fontSize * 0.7 + fontSize * 0.25;
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#009246'; ctx.fillRect(fx, fy, flagW / 3, flagH);
+          ctx.fillStyle = '#fff';    ctx.fillRect(fx + flagW / 3, fy, flagW / 3, flagH);
+          ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx + flagW * 2 / 3, fy, flagW / 3, flagH);
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
+      // ── Table view (3D → flat transition) ──
+      if (t < TABLE_START) {
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('SPACE to skip', W / 2, H - 15);
+        ctx.restore();
+        return;
+      }
+
+      const tableReveal = Math.min((t - TABLE_START) / 0.8, 1);
+
+      // Flatten progress (0 = 3D angled, 1 = flat top-down)
+      const flatRaw = t < FLATTEN_START ? 0
+        : Math.min((t - FLATTEN_START) / (FLATTEN_END - FLATTEN_START), 1);
+      const flatEased = flatRaw < 0.5
+        ? 4 * flatRaw * flatRaw * flatRaw
+        : 1 - Math.pow(-2 * flatRaw + 2, 3) / 2;
+
+      const { frameW, tL, tT, tW, tH, sL, sT, sW, sH } = ctLayout();
+      const tR = tL + tW, tB = tT + tH;
+
+      // ── 3D perspective parameters (lerp from angled to flat) ──
+      // When flat=0: show angled 3D view. When flat=1: flat top-down coffee table
+      const viewScale = 0.55 + flatEased * 0.45;
+      const perspY = 0.30 * (1 - flatEased);   // how far down the table appears
+      const tiltAmt = 0.12 * (1 - flatEased);  // perspective tilt amount
+
+      // Table body (visible in 3D phase)
+      const bodyAlpha = Math.max(0, 1 - flatEased * 1.8) * tableReveal;
+
+      if (bodyAlpha > 0.01 && flatEased < 0.8) {
+        ctx.save();
+        ctx.globalAlpha = bodyAlpha;
+
+        // 3D table surface area
+        const surfW3 = W * viewScale * 0.92;
+        const surfL3 = (W - surfW3) / 2;
+        const surfR3 = surfL3 + surfW3;
+        const surfT3 = H * (perspY + 0.10);
+        const surfB3 = H * (perspY + 0.10 + viewScale * 0.60);
+
+        const bTop = surfB3;
+        const bH = H * 0.20 * (1 - flatEased);
+        const bL = surfL3 - 8;
+        const bR = surfR3 + 8;
+
+        // Body fill
+        ctx.fillStyle = '#0e0e0e';
+        ctx.fillRect(bL, bTop, bR - bL, bH);
+
+        // Legs
+        ctx.fillStyle = '#050505';
+        const legW3 = (bR - bL) * 0.22;
+        const legH3 = bH * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(bL + legW3 * 0.3, bTop + bH);
+        ctx.lineTo(bL + legW3 * 0.3, bTop + bH - legH3);
+        ctx.quadraticCurveTo(bL + legW3 * 1.2, bTop + bH - legH3 - 6, bL + legW3 * 2, bTop + bH - legH3);
+        ctx.lineTo(bL + legW3 * 2, bTop + bH);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(bR - legW3 * 0.3, bTop + bH);
+        ctx.lineTo(bR - legW3 * 0.3, bTop + bH - legH3);
+        ctx.quadraticCurveTo(bR - legW3 * 1.2, bTop + bH - legH3 - 6, bR - legW3 * 2, bTop + bH - legH3);
+        ctx.lineTo(bR - legW3 * 2, bTop + bH);
+        ctx.closePath();
+        ctx.fill();
+
+        // Branding
+        const brs = Math.max(18, surfW3 * 0.05);
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${brs}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('PONGBALL', W / 2, bTop + bH * 0.30);
+        ctx.font = `bold ${brs * 0.4}px monospace`;
+        ctx.fillStyle = '#ccc';
+        ctx.fillText("ITALIA '90", W / 2, bTop + bH * 0.50);
+
+        // Flag
+        const fw3 = surfW3 * 0.07;
+        const fh3 = Math.max(2, brs * 0.07);
+        const fx3 = W / 2 - fw3 / 2;
+        const fy3 = bTop + bH * 0.62;
+        ctx.fillStyle = '#009246'; ctx.fillRect(fx3, fy3, fw3 / 3, fh3);
+        ctx.fillStyle = '#fff';    ctx.fillRect(fx3 + fw3 / 3, fy3, fw3 / 3, fh3);
+        ctx.fillStyle = '#CE2B37'; ctx.fillRect(fx3 + fw3 * 2 / 3, fy3, fw3 / 3, fh3);
+
+        // Art deco stripes on body
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = Math.max(2, brs * 0.07);
+        ctx.beginPath();
+        ctx.moveTo(bL + 10, bTop + 4);
+        ctx.lineTo(bL + 10, bTop + bH * 0.7);
+        ctx.lineTo(bL + 32, bTop + bH * 0.7);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(bR - 10, bTop + 4);
+        ctx.lineTo(bR - 10, bTop + bH * 0.7);
+        ctx.lineTo(bR - 32, bTop + bH * 0.7);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      // ── Surface (interpolated between 3D trapezoid and flat rect) ──
+      ctx.save();
+      ctx.globalAlpha = tableReveal;
+
+      // 3D angled surface corners (when flat=0)
+      const squeeze3d = 0.15 * (1 - flatEased);
+      const yShift3d = perspY * (1 - flatEased);
+      const margin3d = 0.04;
+
+      // 3D corners (trapezoid)
+      const farL3 = W * (margin3d + squeeze3d);
+      const farR3 = W * (1 - margin3d - squeeze3d);
+      const farY3 = H * (0.12 + yShift3d);
+      const nearL3 = W * margin3d;
+      const nearR3 = W * (1 - margin3d);
+      const nearY3 = H * (0.85 + yShift3d * 0.2);
+
+      // Flat target corners (coffee table surface rect)
+      // Lerp between 3D and flat
+      const c_tl_x = farL3 + (sL - farL3) * flatEased;
+      const c_tl_y = farY3 + (sT - farY3) * flatEased;
+      const c_tr_x = farR3 + (sL + sW - farR3) * flatEased;
+      const c_tr_y = farY3 + (sT - farY3) * flatEased;
+      const c_bl_x = nearL3 + (sL - nearL3) * flatEased;
+      const c_bl_y = nearY3 + (sT + sH - nearY3) * flatEased;
+      const c_br_x = nearR3 + (sL + sW - nearR3) * flatEased;
+      const c_br_y = nearY3 + (sT + sH - nearY3) * flatEased;
+
+      // Surface fill
+      ctx.fillStyle = '#080808';
+      ctx.beginPath();
+      ctx.moveTo(c_tl_x, c_tl_y);
+      ctx.lineTo(c_tr_x, c_tr_y);
+      ctx.lineTo(c_br_x, c_br_y);
+      ctx.lineTo(c_bl_x, c_bl_y);
+      ctx.closePath();
+      ctx.fill();
+
+      // LED border
+      ctx.lineWidth = Math.max(3, 4 * viewScale);
+      const midSx = (c_tl_x + c_tr_x) / 2;
+      const midSy_t = (c_tl_y + c_tr_y) / 2;
+      const midBx = (c_bl_x + c_br_x) / 2;
+      const midBy_b = (c_bl_y + c_br_y) / 2;
+
+      ctx.save();
+      ctx.shadowColor = activeLeftData.primary;
+      ctx.shadowBlur = 15;
+      ctx.strokeStyle = activeLeftData.primary;
+      ctx.beginPath();
+      ctx.moveTo(midSx, midSy_t);
+      ctx.lineTo(c_tl_x, c_tl_y);
+      ctx.lineTo(c_bl_x, c_bl_y);
+      ctx.lineTo(midBx, midBy_b);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.shadowColor = activeRightData.primary;
+      ctx.shadowBlur = 15;
+      ctx.strokeStyle = activeRightData.primary;
+      ctx.beginPath();
+      ctx.moveTo(midSx, midSy_t);
+      ctx.lineTo(c_tr_x, c_tr_y);
+      ctx.lineTo(c_br_x, c_br_y);
+      ctx.lineTo(midBx, midBy_b);
+      ctx.stroke();
+      ctx.restore();
+
+      // Simple field lines on the surface
+      ctx.strokeStyle = 'rgba(100,180,220,0.2)';
+      ctx.lineWidth = 1;
+      // Center line
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(midSx, midSy_t);
+      ctx.lineTo(midBx, midBy_b);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Paddles (simplified dots)
+      allPaddles.forEach(p => {
+        const u = (p.x + p.w / 2) / W;
+        const v = (p.y + p.h / 2) / H;
+        // Bilinear interpolation on the quad
+        const px = c_tl_x * (1-u) * (1-v) + c_tr_x * u * (1-v) + c_bl_x * (1-u) * v + c_br_x * u * v;
+        const py = c_tl_y * (1-u) * (1-v) + c_tr_y * u * (1-v) + c_bl_y * (1-u) * v + c_br_y * u * v;
+        const team = p.isLeft ? leftTeam : rightTeam;
+        const teamColor = team ? team.data.primary : '#fff';
+        ctx.save();
+        ctx.shadowColor = teamColor;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(px - 3, py - 6, 6, 12);
+        ctx.restore();
+      });
+
+      ctx.restore();
+
+      // ── Table frame (fading in as we approach flat) ──
+      if (flatEased > 0.3) {
+        const frameAlpha = Math.min((flatEased - 0.3) / 0.4, 1) * tableReveal;
+        ctx.save();
+        ctx.globalAlpha = frameAlpha;
+
+        // Draw simplified frame
+        ctx.fillStyle = '#0e0e0e';
+        // Top
+        ctx.fillRect(tL, tT, tW, sT - tT);
+        // Bottom
+        ctx.fillRect(tL, sT + sH, tW, tB - sT - sH);
+        // Left
+        ctx.fillRect(tL, sT, sL - tL, sH);
+        // Right
+        ctx.fillRect(sL + sW, sT, tR - sL - sW, sH);
+
+        // LED strips (on the frame)
+        ctx.lineWidth = 3;
+        const midFx = (sL + sL + sW) / 2;
+        ctx.strokeStyle = activeLeftData.primary;
+        ctx.shadowColor = activeLeftData.primary;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(midFx, sT - 1);
+        ctx.lineTo(sL - 1, sT - 1);
+        ctx.lineTo(sL - 1, sT + sH + 1);
+        ctx.lineTo(midFx, sT + sH + 1);
+        ctx.stroke();
+        ctx.strokeStyle = activeRightData.primary;
+        ctx.shadowColor = activeRightData.primary;
+        ctx.beginPath();
+        ctx.moveTo(midFx, sT - 1);
+        ctx.lineTo(sL + sW + 1, sT - 1);
+        ctx.lineTo(sL + sW + 1, sT + sH + 1);
+        ctx.lineTo(midFx, sT + sH + 1);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      // ── Team names flash ──
+      if (t >= TEXT_START && t < TEXT_END) {
+        const textT = (t - TEXT_START) / (TEXT_END - TEXT_START);
+        let alpha;
+        if (textT < 0.2) alpha = textT / 0.2;
+        else if (textT > 0.7) alpha = (1 - textT) / 0.3;
+        else alpha = 1;
+        alpha = Math.max(0, Math.min(1, alpha));
+
+        const fontSize = Math.max(24, W * 0.032);
+        ctx.textBaseline = 'middle';
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = activeLeftData.primary;
+        ctx.fillStyle = activeLeftData.primary;
+        ctx.textAlign = 'right';
+        ctx.fillText(activeLeftData.name.toUpperCase(), W * 0.47, H * 0.48);
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.font = `bold ${fontSize * 0.45}px monospace`;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#fff';
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.fillText('vs', W * 0.50, H * 0.48);
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = activeRightData.primary;
+        ctx.fillStyle = activeRightData.primary;
+        ctx.textAlign = 'left';
+        ctx.fillText(activeRightData.name.toUpperCase(), W * 0.53, H * 0.48);
+        ctx.restore();
+      }
+
+      // Skip hint
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('SPACE to skip', W / 2, H - 15);
+      ctx.restore();
+    }
+
     // ─── MAIN LOOP ───
     function loop(now) {
       if (gameMode === 'menu') {
@@ -2517,9 +4191,17 @@
         renderWorldCup();
       } else if (cutsceneActive) {
         renderCutscene(now);
+      } else if (ctCutsceneActive) {
+        renderCTCutscene(now);
+      } else if (gameMode === 'coffeetable') {
+        update(now);
+        renderCoffeeTable();
       } else if (gameMode === 'match3d') {
         update(now);
         render3D();
+      } else if (gameMode === 'wc_match') {
+        update(now);
+        render();
       } else {
         update(now);
         render();
